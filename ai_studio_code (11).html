@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>WyScan - Native Offline Utility</title>
+  
+  <!-- Inline PWA Manifest via Data URI -->
+  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22WyScan%22%2C%22short_name%22%3A%22WyScan%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F9FAFB%22%2C%22theme_color%22%3A%22%2314B86A%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Butf8%2C%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20192%20192%27%3E%3Crect%20width%3D%27192%27%20height%3D%27192%27%20rx%3D%2740%27%20fill%3D%27%2314B86A%27%2F%3E%3Cpath%20d%3D%27M46%2046h40v40H46zm10%2010v20h20V56zm44%2010h40v40h-40zm10%2010v20h20V76zM46%20106h40v40H46zm10%2010v20h20v-20zm54%2010h10v10h-10zm10%2010h10v10h-10zm-10%2010h10v10h-10zm20-20h10v10h-10zm0%2020h10v10h-10z%27%20fill%3D%27%23ffffff%27%2F%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+
+  <!-- Apple web app metadata -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="WyScan">
+
+  <!-- Dynamic Styling Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+  
+  <!-- Robust Client-Side SDKs -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#14B86A',
+              dark: '#0F8F52',
+              light: '#3CD085',
+            },
+            neutral: {
+              950: '#0B0B0C'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .ripple { position: relative; overflow: hidden; }
+    .ripple-effect {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(20, 184, 106, 0.15);
+      transform: scale(0);
+      animation: ripple-anim 0.5s ease-out;
+      pointer-events: none;
+    }
+    @keyframes ripple-anim { to { transform: scale(4); opacity: 0; } }
+    .drawer-overlay {
+      transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .drawer-menu {
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .drawer-menu.open { transform: translateX(0); }
+    .bottom-sheet {
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.1, 0.76, 0.55, 0.94);
+    }
+    .bottom-sheet.open { transform: translateY(0); }
+    @keyframes scanner-laser {
+      0%, 100% { top: 8%; opacity: 0.8; }
+      50% { top: 92%; opacity: 0.8; }
+    }
+    .laser-line { animation: scanner-laser 2.5s infinite linear; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden flex flex-col transition-colors duration-200">
+
+  <!-- Splash Screen / Introductory Banner -->
+  <div id="splash" class="fixed inset-0 bg-white dark:bg-neutral-950 z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+    <div class="w-20 h-20 bg-primary rounded-[28px] flex items-center justify-center shadow-lg shadow-primary/20 animate-bounce">
+      <span class="material-symbols-rounded text-white text-4xl">qr_code_2</span>
+    </div>
+    <h1 class="mt-5 text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">WyScan</h1>
+    <p class="text-xs text-neutral-400 mt-1">Client-Side Android Experience</p>
+  </div>
+
+  <!-- Unified Navigation Header -->
+  <header class="pt-12 px-6 pb-4 flex justify-between items-center bg-white/70 dark:bg-neutral-950/70 backdrop-blur-md border-b border-gray-100 dark:border-neutral-900 z-30">
+    <div class="flex items-center gap-3">
+      <button onclick="toggleDrawer(true)" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors ripple">
+        <span class="material-symbols-rounded text-2xl block">menu</span>
+      </button>
+      <h2 id="header-title" class="text-xl font-bold tracking-tight">WyScan</h2>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="pwa-install" class="hidden p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-all ripple">
+        <span class="material-symbols-rounded text-2xl">download_for_offline</span>
+      </button>
+      <button id="header-file-trigger" class="hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors ripple" onclick="triggerDeviceGallery()">
+        <span class="material-symbols-rounded text-2xl">upload_file</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Left Sided Collapsible Navigation Drawer -->
+  <div id="drawer-overlay" class="drawer-overlay fixed inset-0 bg-black/40 backdrop-blur-xs z-40 hidden opacity-0" onclick="toggleDrawer(false)"></div>
+  <aside id="drawer" class="drawer-menu fixed top-0 bottom-0 left-0 w-80 max-w-[85vw] bg-white dark:bg-neutral-950 z-50 shadow-2xl flex flex-col border-r border-gray-100 dark:border-neutral-900">
+    <!-- Drawer Header -->
+    <div class="p-6 border-b border-gray-100 dark:border-neutral-900 flex items-center gap-3 bg-neutral-50 dark:bg-neutral-900/20">
+      <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+        <span class="material-symbols-rounded text-2xl">qr_code_2</span>
+      </div>
+      <div>
+        <h3 class="font-bold text-base">WyScan Professional</h3>
+        <p class="text-[10px] text-neutral-400">Offline Secure Utility</p>
+      </div>
+    </div>
+    
+    <!-- Drawer Menu Items -->
+    <div class="flex-1 overflow-y-auto py-4 px-3 space-y-1 no-scrollbar">
+      <button onclick="drawerNavigate('home')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">home</span> Home
+      </button>
+      <button onclick="drawerNavigate('scan')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">qr_code_scanner</span> Scan QR
+      </button>
+      <button onclick="drawerNavigate('generate')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">add_box</span> Generate QR
+      </button>
+      <button onclick="drawerNavigate('auth')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">token</span> Authentication (TOTP)
+      </button>
+      <button onclick="drawerNavigate('history')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">history</span> History Logs
+      </button>
+      <button onclick="drawerNavigate('favorites')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">star</span> Favorites
+      </button>
+      <div class="h-px bg-gray-100 dark:bg-neutral-900 my-4"></div>
+      <button onclick="drawerNavigate('settings')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">settings</span> Settings
+      </button>
+      <button onclick="openInfoModal('about')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">info</span> About WyScan
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content Chassis -->
+  <main class="flex-1 overflow-y-auto pb-28 px-6 no-scrollbar relative z-20">
+
+    <!-- HOME SCREEN -->
+    <section id="screen-home" class="py-8 space-y-8">
+      <!-- Carousel Branding Card -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-8 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center text-center space-y-4">
+        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center animate-spin" style="animation-duration: 8s;">
+          <span class="material-symbols-rounded text-3xl">qr_code_2</span>
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold tracking-tight">WyScan Secure</h2>
+          <div class="h-6 overflow-hidden mt-1 flex justify-center">
+            <span id="rotating-text" class="text-sm text-neutral-400 font-semibold transition-transform duration-500">Scan instantly</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="grid grid-cols-2 gap-4">
+        <button onclick="showScreen('scan')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">qr_code_scanner</span></div>
+          <span class="text-sm font-bold">Scan QR</span>
+        </button>
+        <button onclick="showScreen('generate')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">add_box</span></div>
+          <span class="text-sm font-bold">Generate</span>
+        </button>
+        <button onclick="showScreen('auth')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">token</span></div>
+          <span class="text-sm font-bold">Authenticator</span>
+        </button>
+        <button onclick="showScreen('history')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">history</span></div>
+          <span class="text-sm font-bold">Logs / History</span>
+        </button>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- QR CAMERA SCANNER SCREEN -->
+    <section id="screen-scan" class="py-6 space-y-6 hidden">
+      <!-- Camera Viewfinder Wrap -->
+      <div class="relative w-full aspect-square max-w-md mx-auto overflow-hidden rounded-[32px] bg-black shadow-lg">
+        <video id="scan-video" playsinline class="w-full h-full object-cover"></video>
+        
+        <!-- Live Viewfinder Box -->
+        <div class="absolute inset-0 border-[40px] border-black/40 flex items-center justify-center">
+          <div class="relative w-56 h-56 border-2 border-primary rounded-3xl">
+            <!-- Precise rounded corners styling matching Material You standard -->
+            <div class="absolute -top-[3px] -left-[3px] w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg"></div>
+            <div class="absolute -top-[3px] -right-[3px] w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg"></div>
+            <div class="absolute -bottom-[3px] -left-[3px] w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg"></div>
+            <div class="absolute -bottom-[3px] -right-[3px] w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg"></div>
+            <div class="laser-line absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent"></div>
+          </div>
+        </div>
+
+        <!-- Float camera setting overlays -->
+        <div class="absolute bottom-6 inset-x-0 flex justify-center gap-4 px-6 z-10">
+          <button onclick="toggleScannerFlash()" class="p-3 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-black/80 transition-all">
+            <span id="flash-icon" class="material-symbols-rounded block">flash_off</span>
+          </button>
+          <button onclick="toggleScannerSwitch()" class="p-3 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-black/80 transition-all">
+            <span class="material-symbols-rounded block">flip_camera_ios</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Local File upload alternatives -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center text-center space-y-4">
+        <span class="material-symbols-rounded text-4xl text-neutral-400">document_scanner</span>
+        <div>
+          <p class="font-bold text-sm">Offline OCR & File Reading</p>
+          <p class="text-xs text-neutral-400 mt-1">Upload screenshots, photos, or documents directly</p>
+        </div>
+        <button onclick="triggerDeviceGallery()" class="py-3 px-6 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-sm inline-flex items-center gap-2 transition-all ripple">
+          <span class="material-symbols-rounded">photo_library</span> Browse Files
+        </button>
+        <input type="file" id="device-file-input" accept="image/*" class="hidden" onchange="runFileScanner(this)">
+      </div>
+    </section>
+
+    <!-- GENERATOR SCREEN -->
+    <section id="screen-generate" class="py-6 space-y-6 hidden">
+      <!-- Input Carousel of categories -->
+      <div class="flex overflow-x-auto gap-2 pb-2 no-scrollbar scroll-smooth" id="generate-selector">
+        <!-- Injected dynamically by JS -->
+      </div>
+
+      <!-- Context input forms -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm space-y-4">
+        <div id="generator-form-fields" class="space-y-4"></div>
+      </div>
+
+      <!-- Styling Parameters & Verification Box -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm space-y-4">
+        <h4 class="font-bold text-sm uppercase tracking-wider text-neutral-400">Personalize QR Style</h4>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold text-neutral-400">Foreground Color</label>
+            <input type="color" id="style-fg" value="#000000" class="w-full h-11 p-1 bg-neutral-50 dark:bg-neutral-950/40 rounded-xl border border-neutral-100 dark:border-neutral-800 cursor-pointer" oninput="runLiveQRGeneration()">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold text-neutral-400">Background Color</label>
+            <input type="color" id="style-bg" value="#ffffff" class="w-full h-11 p-1 bg-neutral-50 dark:bg-neutral-950/40 rounded-xl border border-neutral-100 dark:border-neutral-800 cursor-pointer" oninput="runLiveQRGeneration()">
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs font-bold text-neutral-400">
+            <span>Code Margin Padding</span>
+            <span id="lbl-style-margin">4</span>
+          </div>
+          <input type="range" id="style-margin" min="0" max="6" value="4" class="w-full accent-primary bg-neutral-100 dark:bg-neutral-800 rounded-full h-2 appearance-none cursor-pointer" oninput="runLiveQRGeneration()">
+        </div>
+      </div>
+
+      <!-- Generated Live Canvas Panel -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center space-y-6">
+        <div class="relative p-4 bg-white rounded-2xl border border-gray-200 shadow-inner">
+          <canvas id="generator-output-canvas" class="w-48 h-48 max-w-full"></canvas>
+        </div>
+
+        <!-- On Device Readability Verification Rate -->
+        <div class="w-full bg-neutral-50 dark:bg-neutral-950/60 rounded-2xl p-4 border border-gray-100 dark:border-neutral-800/40 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-neutral-400 font-bold">Scanning Readability Score</p>
+            <p id="qr-quality-lbl" class="font-bold text-sm text-emerald-500 mt-0.5">Calculating...</p>
+          </div>
+          <span class="material-symbols-rounded text-primary text-2xl">verified</span>
+        </div>
+
+        <!-- Export controls -->
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex gap-2">
+            <button onclick="triggerQRDownload('png')" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all ripple">
+              <span class="material-symbols-rounded text-base">image</span> Export PNG
+            </button>
+            <button onclick="triggerQRDownload('pdf')" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all ripple">
+              <span class="material-symbols-rounded text-base">picture_as_pdf</span> Export PDF
+            </button>
+          </div>
+          <button onclick="triggerQRDownload('share')" class="py-4 px-6 bg-primary text-white hover:bg-primary-dark rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-primary/25 ripple">
+            <span class="material-symbols-rounded text-lg">share</span> Direct Native Share
+          </button>
+        </div>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTHENTICATOR (TOTP) SCREEN -->
+    <section id="screen-auth" class="py-6 space-y-6 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold">Security Keys</h3>
+          <p class="text-xs text-neutral-400">Local Decrypted TOTP Tokens</p>
+        </div>
+        <button onclick="triggerDeviceGallery()" class="p-2.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl transition-all ripple">
+          <span class="material-symbols-rounded block text-lg">qr_code_scanner</span>
+        </button>
+      </div>
+
+      <!-- TOTP Card Container -->
+      <div id="totp-card-list" class="space-y-3">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- HISTORY / LOGS SCREEN -->
+    <section id="screen-history" class="py-6 space-y-4 hidden">
+      <div class="flex items-center gap-2 bg-white dark:bg-neutral-900 px-4 py-3 rounded-2xl border border-gray-100 dark:border-neutral-900 shadow-sm">
+        <span class="material-symbols-rounded text-neutral-400">search</span>
+        <input type="text" id="history-search-input" placeholder="Search saved logs..." class="bg-transparent flex-1 text-sm outline-none" oninput="renderHistoryLog()">
+      </div>
+
+      <!-- Dynamic Header Actions -->
+      <div class="flex items-center justify-between">
+        <div class="flex gap-1 overflow-x-auto no-scrollbar" id="history-filters">
+          <button onclick="setHistoryFilter('all')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-primary text-white transition-all shadow-md">All</button>
+          <button onclick="setHistoryFilter('scanned')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-500 transition-all">Scans</button>
+          <button onclick="setHistoryFilter('generated')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-500 transition-all">Generations</button>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="triggerHistoryZipExport()" class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 text-neutral-400 rounded-xl transition-colors">
+            <span class="material-symbols-rounded text-lg block">archive</span>
+          </button>
+          <button onclick="clearAllHistoryConfirm()" class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 text-red-500 rounded-xl transition-colors">
+            <span class="material-symbols-rounded text-lg block">delete_sweep</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="history-data-list" class="space-y-3">
+        <!-- Generated Dynamic Nodes -->
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS SCREEN -->
+    <section id="screen-settings" class="py-6 space-y-6 hidden">
+      <!-- General Layout Group -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 dark:border-neutral-900 bg-neutral-50 dark:bg-neutral-900/20">
+          <h4 class="font-bold text-xs uppercase tracking-wider text-neutral-400">Settings & Rules</h4>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-neutral-900">
+          <!-- Audio Toggle -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Audio Sound Confirmation</p>
+              <p class="text-xs text-neutral-400">Play confirmation signal on scans</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-sound" class="sr-only peer" checked onchange="toggleEngineSetting('sound')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+          <!-- Haptic Toggle -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Haptic Feedback</p>
+              <p class="text-xs text-neutral-400">Perform physical system vibration</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-haptic" class="sr-only peer" checked onchange="toggleEngineSetting('haptic')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+          <!-- Auto Save Logs -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Automatic History Archival</p>
+              <p class="text-xs text-neutral-400">Record parameters on success states</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-autosave" class="sr-only peer" checked onchange="toggleEngineSetting('autoSave')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dark Mode selections -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm p-4 space-y-3">
+        <h4 class="font-bold text-xs uppercase tracking-wider text-neutral-400 px-2">Theme Mode</h4>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="theme-light" onclick="setUserTheme('light')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">light_mode</span>
+            <span class="text-xs font-semibold">Light</span>
+          </button>
+          <button id="theme-dark" onclick="setUserTheme('dark')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">dark_mode</span>
+            <span class="text-xs font-semibold">Dark</span>
+          </button>
+          <button id="theme-system" onclick="setUserTheme('system')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">settings_suggest</span>
+            <span class="text-xs font-semibold">System</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Erase state button -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 p-6 flex items-center justify-between shadow-sm">
+        <div>
+          <p class="font-bold text-sm">Purge Application Cache</p>
+          <p class="text-xs text-neutral-400 mt-0.5">Flush local database & persistent states</p>
+        </div>
+        <button onclick="purgeLocalCache()" class="py-2.5 px-4 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/45 text-red-500 font-bold text-xs rounded-xl transition-all ripple">
+          Purge Data
+        </button>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Navigation Bar (Capsule Active Indication style) -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white/95 dark:bg-neutral-950/95 border-t border-gray-100 dark:border-neutral-900 px-6 py-2 pb-8 flex justify-around items-center z-40 backdrop-blur-md">
+    <button onclick="showScreen('home')" id="nav-home" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">home</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Home</span>
+    </button>
+    <button onclick="showScreen('scan')" id="nav-scan" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">qr_code_scanner</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Scan</span>
+    </button>
+    <button onclick="showScreen('generate')" id="nav-generate" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">add_box</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Generate</span>
+    </button>
+    <button onclick="showScreen('auth')" id="nav-auth" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">token</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Tokens</span>
+    </button>
+    <button onclick="showScreen('history')" id="nav-history" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">history</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Logs</span>
+    </button>
+  </nav>
+
+  <!-- RESULT SLIDE-UP BOTTOM SHEET overlay -->
+  <div id="backdrop" class="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 hidden opacity-0 transition-opacity duration-300" onclick="closeBottomSheet()"></div>
+  <div id="bottom-sheet" class="bottom-sheet fixed bottom-0 inset-x-0 bg-white dark:bg-neutral-900 rounded-t-[32px] p-6 pb-12 z-50 shadow-2xl border-t border-gray-100 dark:border-neutral-900 flex flex-col max-h-[85vh]">
+    <div class="w-12 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full mx-auto mb-6 cursor-pointer" onclick="closeBottomSheet()"></div>
+    
+    <div class="flex items-start gap-4 mb-6">
+      <div id="sheet-icon-bg" class="p-3.5 bg-primary/10 text-primary rounded-2xl flex-shrink-0">
+        <span id="sheet-icon" class="material-symbols-rounded text-2xl block">link</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h4 id="sheet-title" class="font-bold text-lg leading-tight">Web Link Found</h4>
+        <p id="sheet-subtitle" class="text-xs text-neutral-400 mt-1 truncate">Checking safety parameter...</p>
+      </div>
+    </div>
+
+    <div id="sheet-payload-card" class="bg-neutral-50 dark:bg-neutral-950 p-4 rounded-2xl border border-gray-100 dark:border-neutral-900 text-sm overflow-y-auto max-h-[25vh] select-text break-all mb-6">
+      <!-- Decoded target strings injected -->
+    </div>
+
+    <!-- Quick action lists inside result -->
+    <div class="space-y-3" id="sheet-actions"></div>
+  </div>
+
+  <!-- NATIVE COMPLIANT ADVERTISING INTERVENTIONAL DIALOG -->
+  <div id="ad-loading-dialog" class="fixed inset-0 bg-black/60 backdrop-blur-md z-50 hidden flex-col items-center justify-center p-6 text-center">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-8 max-w-sm w-full border border-gray-100 dark:border-neutral-800 flex flex-col items-center space-y-6">
+      <div class="w-14 h-14 bg-primary/10 text-primary rounded-2xl flex items-center justify-center animate-pulse">
+        <span class="material-symbols-rounded text-3xl">download_for_offline</span>
+      </div>
+      <div>
+        <h4 class="font-bold text-base text-neutral-900 dark:text-white">Downloading Your File</h4>
+        <p class="text-xs text-neutral-400 mt-1">Please wait a few moments as we compile your vector document...</p>
+      </div>
+      
+      <!-- Loading progress strip -->
+      <div class="w-full bg-neutral-100 dark:bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+        <div id="ad-progress-fill" class="bg-primary h-full transition-all duration-100" style="width: 0%;"></div>
+      </div>
+      
+      <p class="text-[10px] text-neutral-400 font-semibold uppercase tracking-widest animate-pulse">WyScan Secure Offline Process</p>
+    </div>
+  </div>
+
+  <!-- PERMISSION SCREEN MODAL -->
+  <div id="permission-dialog" class="fixed inset-0 bg-black/50 backdrop-blur-md z-50 hidden flex-col items-center justify-center p-6 text-center">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-8 max-w-md w-full border border-gray-100 dark:border-neutral-800 flex flex-col items-center space-y-6">
+      <div class="w-16 h-16 bg-primary/10 text-primary rounded-[22px] flex items-center justify-center">
+        <span class="material-symbols-rounded text-3xl block">photo_camera</span>
+      </div>
+      <div>
+        <h4 class="font-bold text-lg">Grant Camera Permission</h4>
+        <p class="text-sm text-neutral-400 mt-2">WyScan processes optical imagery completely local on your device processor. We do not transmit frames or data profiles online.</p>
+      </div>
+      <div class="flex gap-3 w-full">
+        <button onclick="dismissPermissionDialog()" class="flex-1 py-3 px-4 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-semibold text-sm transition-all">Cancel</button>
+        <button onclick="requestCameraLifecycle()" class="flex-1 py-3 px-4 bg-primary text-white rounded-2xl font-semibold text-sm transition-all shadow-md shadow-primary/25">Allow Camera</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRIVACY POLICY / TERMS DIALOG -->
+  <div id="info-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-6">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-6 max-w-lg w-full border border-gray-100 dark:border-neutral-800 flex flex-col max-h-[80vh]">
+      <div class="flex justify-between items-center mb-4">
+        <h4 id="info-modal-title" class="font-bold text-lg">Information</h4>
+        <button onclick="closeInfoModal()" class="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors"><span class="material-symbols-rounded block">close</span></button>
+      </div>
+      <div id="info-modal-body" class="flex-1 overflow-y-auto text-sm text-neutral-500 dark:text-neutral-400 space-y-4 no-scrollbar">
+        <!-- Text details inject here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- NATIVE COMPLIANT TOAST MESSAGE -->
+  <div id="toast" class="fixed bottom-28 left-1/2 -translate-x-1/2 bg-neutral-900/95 dark:bg-neutral-100/95 text-white dark:text-neutral-950 px-5 py-3 rounded-full shadow-lg text-xs font-semibold z-50 pointer-events-none opacity-0 scale-90 transition-all duration-300"></div>
+
+  <!-- APPLICATION ENGINE SCRIPT -->
+  <script>
+    // --- COMPONENT REGISTER & STATE CHASSIS ---
+    let activeScreenState = 'home';
+    let currentTabQRType = 'url';
+    let databaseHistory = [];
+    let authenticatorTokens = [];
+    let historyFilterState = 'all';
+
+    let scanCameraLifecycle = false;
+    let cameraVideoStreamObj = null;
+    let activeCameraFacingMode = 'environment';
+    let liveTorchState = false;
+
+    let systemConfig = {
+      theme: 'system',
+      sound: true,
+      haptic: true,
+      autoSave: true
+    };
+
+    // Global offscreen raster tools
+    const rasterCanvas = document.createElement('canvas');
+    const rasterContext = rasterCanvas.getContext('2d');
+
+    // --- HOME SCREEN ROTATOR ---
+    const ROTATOR_TEXTS = ["Scan instantly", "Create customized QR Codes", "100% Offline Operations", "On-Device Authenticator", "Hardware Accelerations"];
+    let rotatorIndex = 0;
+    
+    function startBrandingTextRotation() {
+      setInterval(() => {
+        const textNode = document.getElementById('rotating-text');
+        if (!textNode) return;
+        textNode.style.transform = 'translateY(-20px)';
+        textNode.style.opacity = '0';
+        setTimeout(() => {
+          rotatorIndex = (rotatorIndex + 1) % ROTATOR_TEXTS.length;
+          textNode.textContent = ROTATOR_TEXTS[rotatorIndex];
+          textNode.style.transform = 'translateY(20px)';
+          setTimeout(() => {
+            textNode.style.transform = 'translateY(0)';
+            textNode.style.opacity = '1';
+          }, 50);
+        }, 400);
+      }, 3500);
+    }
+
+    // --- MONETIZATION & AD ADAPTOR MANAGER ---
+    const AdManager = {
+      config: {
+        allAdsEnabled: true,
+        bannerAdsEnabled: true,
+        smartlinkEnabled: true,
+        smartlinkUrl: "https://potterynaggingformerly.com/e78071cy2?key=722ed577a2c49f33f5bd96c777520ff1",
+        adDisplayHoldMs: 3000
+      },
+
+      initBannerIntegration() {
+        if (!this.config.allAdsEnabled || !this.config.bannerAdsEnabled) {
+          document.querySelectorAll('.ad-banner-container').forEach(el => el.classList.add('hidden'));
+          return;
+        }
+        if (!document.getElementById('ads-external-worker')) {
+          const workerScript = document.createElement('script');
+          workerScript.id = 'ads-external-worker';
+          workerScript.async = true;
+          workerScript.dataset.cfasync = "false";
+          workerScript.src = "https://potterynaggingformerly.com/2a46a48f48ae28576853f055a2e013c8/invoke.js";
+          document.head.appendChild(workerScript);
+        }
+      },
+
+      showSmartlinkThenDownload(onSuccessDownloadCallback) {
+        if (!this.config.allAdsEnabled || !this.config.smartlinkEnabled) {
+          onSuccessDownloadCallback();
+          return;
+        }
+
+        const adDialog = document.getElementById('ad-loading-dialog');
+        const fillBar = document.getElementById('ad-progress-fill');
+        
+        adDialog.classList.remove('hidden');
+        adDialog.classList.add('flex');
+        
+        let completionPercent = 0;
+        const progressClock = setInterval(() => {
+          completionPercent += 10;
+          if (fillBar) fillBar.style.width = `${completionPercent}%`;
+          if (completionPercent >= 100) clearInterval(progressClock);
+        }, this.config.adDisplayHoldMs / 10);
+
+        setTimeout(() => {
+          adDialog.classList.add('hidden');
+          adDialog.classList.remove('flex');
+          if (fillBar) fillBar.style.width = '0%';
+
+          try {
+            window.open(this.config.smartlinkUrl, '_blank');
+          } catch (e) {
+            console.warn("Smartlink popup blocked by device context rules.", e);
+          }
+
+          onSuccessDownloadCallback();
+        }, this.config.adDisplayHoldMs);
+      }
+    };
+
+    // --- COMPONENT INITIALIZATIONS ---
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSystemConfig();
+      loadStoredLogs();
+      loadStoredAuthenticatorTokens();
+      applyUserThemeConfig();
+      setupGeneratorSelectionTabs();
+      setupInputCategoryFields();
+      showScreen('home');
+      startBrandingTextRotation();
+      AdManager.initBannerIntegration();
+
+      // Trigger OTP clocks
+      setInterval(tickOTPTimeRefresh, 1000);
+
+      // Dismiss Splash Window
+      setTimeout(() => {
+        const splashNode = document.getElementById('splash');
+        splashNode.classList.add('opacity-0');
+        setTimeout(() => splashNode.remove(), 500);
+      }, 1200);
+
+      document.addEventListener('click', captureSystemRippleClicks);
+      document.getElementById('generator-form-fields').addEventListener('input', debounce(runLiveQRGeneration, 100));
+    });
+
+    // --- DETAILED DRAW ACTION / RIPPLE FEEDBACKS ---
+    function captureSystemRippleClicks(e) {
+      const parentNode = e.target.closest('.ripple');
+      if (parentNode) {
+        triggerPhysicalHaptic('light');
+        const diameter = Math.max(parentNode.clientWidth, parentNode.clientHeight);
+        const radius = diameter / 2;
+        const dimensions = parentNode.getBoundingClientRect();
+
+        const circleObj = document.createElement('span');
+        circleObj.style.width = circleObj.style.height = `${diameter}px`;
+        circleObj.style.left = `${e.clientX - dimensions.left - radius}px`;
+        circleObj.style.top = `${e.clientY - dimensions.top - radius}px`;
+        circleObj.classList.add('ripple-effect');
+
+        const activeRipple = parentNode.getElementsByClassName('ripple-effect')[0];
+        if (activeRipple) activeRipple.remove();
+
+        parentNode.appendChild(circleObj);
+      }
+    }
+
+    function triggerPhysicalHaptic(intensity) {
+      if (!systemConfig.haptic || !navigator.vibrate) return;
+      if (intensity === 'light') navigator.vibrate(10);
+      else if (intensity === 'medium') navigator.vibrate(25);
+      else if (intensity === 'success') navigator.vibrate([15, 30, 20]);
+    }
+
+    function playSuccessSoundConfirmation() {
+      if (!systemConfig.sound) return;
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const outputNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 1000;
+        outputNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        outputNode.gain.exponentialRampToValueAtTime(0.002, audioCtx.currentTime + 0.15);
+        oscillator.connect(outputNode);
+        outputNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.15);
+      } catch (err) {
+        console.warn('Web Audio synthesis context block.', err);
+      }
+    }
+
+    // --- NAVIGATION MANAGEMENT CONTROLLER ---
+    function showScreen(screenId) {
+      if (screenId !== 'scan' && scanCameraLifecycle) {
+        killCameraStream();
+      }
+
+      activeScreenState = screenId;
+      document.getElementById('header-title').textContent = screenId.charAt(0).toUpperCase() + screenId.slice(1);
+
+      // Toggle Header secondary operations
+      if (screenId === 'scan') {
+        document.getElementById('header-file-trigger').classList.remove('hidden');
+      } else {
+        document.getElementById('header-file-trigger').classList.add('hidden');
+      }
+
+      ['home', 'scan', 'generate', 'auth', 'history', 'settings', 'favorites'].forEach(scr => {
+        const el = document.getElementById(`screen-${scr}`);
+        if (el) el.classList.add('hidden');
+        
+        const tabNav = document.getElementById(`nav-${scr}`);
+        if (tabNav) {
+          tabNav.querySelector('.nav-icon').className = 'material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon block transition-colors';
+          tabNav.querySelector('span:not(.nav-indicator)').className = 'text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 block transition-colors';
+          tabNav.querySelector('.nav-indicator').classList.remove('scale-100');
+          tabNav.querySelector('.nav-indicator').classList.add('scale-0');
+        }
+      });
+
+      // Show selected panel
+      const targetPanel = document.getElementById(`screen-${screenId === 'favorites' ? 'history' : screenId}`);
+      if (targetPanel) targetPanel.classList.remove('hidden');
+
+      const targetNav = document.getElementById(`nav-${screenId === 'favorites' ? 'history' : screenId}`);
+      if (targetNav) {
+        targetNav.querySelector('.nav-icon').className = 'material-symbols-rounded text-primary nav-icon block transition-colors';
+        targetNav.querySelector('span:not(.nav-indicator)').className = 'text-[10px] font-bold mt-1 text-primary block transition-colors';
+        const indicator = targetNav.querySelector('.nav-indicator');
+        indicator.classList.remove('scale-0');
+        indicator.classList.add('scale-100');
+      }
+
+      if (screenId === 'scan') {
+        initiateCameraCaptureFlow();
+      } else if (screenId === 'history' || screenId === 'favorites') {
+        historyFilterState = screenId === 'favorites' ? 'fav' : 'all';
+        renderHistoryLog();
+      } else if (screenId === 'auth') {
+        renderOTPTokenList();
+      }
+    }
+
+    function toggleDrawer(open) {
+      triggerPhysicalHaptic('light');
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      if (open) {
+        overlay.classList.remove('hidden');
+        setTimeout(() => {
+          overlay.classList.add('opacity-100');
+          drawer.classList.add('open');
+        }, 50);
+      } else {
+        overlay.classList.remove('opacity-100');
+        drawer.classList.remove('open');
+        setTimeout(() => overlay.classList.add('hidden'), 300);
+      }
+    }
+
+    function drawerNavigate(target) {
+      toggleDrawer(false);
+      showScreen(target);
+    }
+
+    // --- EXCLUSIVE CAMERA SCANNER MODULE ---
+    function initiateCameraCaptureFlow() {
+      // Prompt camera usage instruction explanation modal first
+      if (!localStorage.getItem('camera_permitted_once')) {
+        document.getElementById('permission-dialog').classList.remove('hidden');
+        document.getElementById('permission-dialog').classList.add('flex');
+      } else {
+        startLensAcquisition();
+      }
+    }
+
+    function dismissPermissionDialog() {
+      document.getElementById('permission-dialog').classList.add('hidden');
+      document.getElementById('permission-dialog').classList.remove('flex');
+      showScreen('home');
+    }
+
+    function requestCameraLifecycle() {
+      localStorage.setItem('camera_permitted_once', 'true');
+      document.getElementById('permission-dialog').classList.add('hidden');
+      document.getElementById('permission-dialog').classList.remove('flex');
+      startLensAcquisition();
+    }
+
+    async function startLensAcquisition() {
+      const video = document.getElementById('scan-video');
+      scanCameraLifecycle = true;
+      liveTorchState = false;
+      document.getElementById('flash-icon').textContent = 'flash_off';
+
+      try {
+        const streamConstraints = {
+          video: {
+            facingMode: activeCameraFacingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 1280 }
+          }
+        };
+        cameraVideoStreamObj = await navigator.mediaDevices.getUserMedia(streamConstraints);
+        video.srcObject = cameraVideoStreamObj;
+        video.setAttribute('playsinline', true);
+        video.play();
+        requestAnimationFrame(processCameraFrameTick);
+      } catch (e) {
+        showToast("Hardware Camera connection failed.");
+        showScreen('home');
+      }
+    }
+
+    function killCameraStream() {
+      scanCameraLifecycle = false;
+      if (cameraVideoStreamObj) {
+        cameraVideoStreamObj.getTracks().forEach(track => track.stop());
+        cameraVideoStreamObj = null;
+      }
+    }
+
+    async function toggleScannerFlash() {
+      if (!cameraVideoStreamObj) return;
+      const track = cameraVideoStreamObj.getVideoTracks()[0];
+      try {
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        if (capabilities.torch) {
+          liveTorchState = !liveTorchState;
+          await track.applyConstraints({ advanced: [{ torch: liveTorchState }] });
+          document.getElementById('flash-icon').textContent = liveTorchState ? 'flash_on' : 'flash_off';
+          triggerPhysicalHaptic('light');
+     
