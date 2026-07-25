@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full select-none">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>WyScan - Native Offline Utility</title>
+  
+  <!-- Inline PWA Manifest via Data URI -->
+  <link rel="manifest" href="data:application/json;charset=utf-8,%7B%22name%22%3A%22WyScan%22%2C%22short_name%22%3A%22WyScan%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23F9FAFB%22%2C%22theme_color%22%3A%22%2314B86A%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%3Butf8%2C%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20192%20192%27%3E%3Crect%20width%3D%27192%27%20height%3D%27192%27%20rx%3D%2740%27%20fill%3D%27%2314B86A%27%2F%3E%3Cpath%20d%3D%27M46%2046h40v40H46zm10%2010v20h20V56zm44%2010h40v40h-40zm10%2010v20h20V76zM46%20106h40v40H46zm10%2010v20h20v-20zm54%2010h10v10h-10zm10%2010h10v10h-10zm-10%2010h10v10h-10zm20-20h10v10h-10zm0%2020h10v10h-10z%27%20fill%3D%27%23ffffff%27%2F%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D">
+
+  <!-- Apple web app metadata -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="WyScan">
+
+  <!-- Dynamic Styling Libraries -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+  
+  <!-- Robust Client-Side SDKs -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            primary: {
+              DEFAULT: '#14B86A',
+              dark: '#0F8F52',
+              light: '#3CD085',
+            },
+            neutral: {
+              950: '#0B0B0C'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .ripple { position: relative; overflow: hidden; }
+    .ripple-effect {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(20, 184, 106, 0.15);
+      transform: scale(0);
+      animation: ripple-anim 0.5s ease-out;
+      pointer-events: none;
+    }
+    @keyframes ripple-anim { to { transform: scale(4); opacity: 0; } }
+    .drawer-overlay {
+      transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .drawer-menu {
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .drawer-menu.open { transform: translateX(0); }
+    .bottom-sheet {
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.1, 0.76, 0.55, 0.94);
+    }
+    .bottom-sheet.open { transform: translateY(0); }
+    @keyframes scanner-laser {
+      0%, 100% { top: 8%; opacity: 0.8; }
+      50% { top: 92%; opacity: 0.8; }
+    }
+    .laser-line { animation: scanner-laser 2.5s infinite linear; }
+  </style>
+</head>
+<body class="h-full bg-gray-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 overflow-hidden flex flex-col transition-colors duration-200">
+
+  <!-- Splash Screen / Introductory Banner -->
+  <div id="splash" class="fixed inset-0 bg-white dark:bg-neutral-950 z-50 flex flex-col items-center justify-center transition-opacity duration-500">
+    <div class="w-20 h-20 bg-primary rounded-[28px] flex items-center justify-center shadow-lg shadow-primary/20 animate-bounce">
+      <span class="material-symbols-rounded text-white text-4xl">qr_code_2</span>
+    </div>
+    <h1 class="mt-5 text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">WyScan</h1>
+    <p class="text-xs text-neutral-400 mt-1">Client-Side Android Experience</p>
+  </div>
+
+  <!-- Unified Navigation Header -->
+  <header class="pt-12 px-6 pb-4 flex justify-between items-center bg-white/70 dark:bg-neutral-950/70 backdrop-blur-md border-b border-gray-100 dark:border-neutral-900 z-30">
+    <div class="flex items-center gap-3">
+      <button onclick="toggleDrawer(true)" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors ripple">
+        <span class="material-symbols-rounded text-2xl block">menu</span>
+      </button>
+      <h2 id="header-title" class="text-xl font-bold tracking-tight">WyScan</h2>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="pwa-install" class="hidden p-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-all ripple">
+        <span class="material-symbols-rounded text-2xl">download_for_offline</span>
+      </button>
+      <button id="header-file-trigger" class="hidden p-2 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-900 transition-colors ripple" onclick="triggerDeviceGallery()">
+        <span class="material-symbols-rounded text-2xl">upload_file</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Left Sided Collapsible Navigation Drawer -->
+  <div id="drawer-overlay" class="drawer-overlay fixed inset-0 bg-black/40 backdrop-blur-xs z-40 hidden opacity-0" onclick="toggleDrawer(false)"></div>
+  <aside id="drawer" class="drawer-menu fixed top-0 bottom-0 left-0 w-80 max-w-[85vw] bg-white dark:bg-neutral-950 z-50 shadow-2xl flex flex-col border-r border-gray-100 dark:border-neutral-900">
+    <!-- Drawer Header -->
+    <div class="p-6 border-b border-gray-100 dark:border-neutral-900 flex items-center gap-3 bg-neutral-50 dark:bg-neutral-900/20">
+      <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white">
+        <span class="material-symbols-rounded text-2xl">qr_code_2</span>
+      </div>
+      <div>
+        <h3 class="font-bold text-base">WyScan Professional</h3>
+        <p class="text-[10px] text-neutral-400">Offline Secure Utility</p>
+      </div>
+    </div>
+    
+    <!-- Drawer Menu Items -->
+    <div class="flex-1 overflow-y-auto py-4 px-3 space-y-1 no-scrollbar">
+      <button onclick="drawerNavigate('home')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">home</span> Home
+      </button>
+      <button onclick="drawerNavigate('scan')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">qr_code_scanner</span> Scan QR
+      </button>
+      <button onclick="drawerNavigate('generate')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">add_box</span> Generate QR
+      </button>
+      <button onclick="drawerNavigate('auth')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">token</span> Authentication (TOTP)
+      </button>
+      <button onclick="drawerNavigate('history')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">history</span> History Logs
+      </button>
+      <button onclick="drawerNavigate('favorites')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">star</span> Favorites
+      </button>
+      <div class="h-px bg-gray-100 dark:bg-neutral-900 my-4"></div>
+      <button onclick="drawerNavigate('settings')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">settings</span> Settings
+      </button>
+      <button onclick="openInfoModal('about')" class="w-full flex items-center gap-4 px-4 py-3 rounded-xl text-sm font-semibold transition-colors hover:bg-gray-50 dark:hover:bg-neutral-900 text-neutral-600 dark:text-neutral-300">
+        <span class="material-symbols-rounded text-xl">info</span> About WyScan
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content Chassis -->
+  <main class="flex-1 overflow-y-auto pb-28 px-6 no-scrollbar relative z-20">
+
+    <!-- HOME SCREEN -->
+    <section id="screen-home" class="py-8 space-y-8">
+      <!-- Carousel Branding Card -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-8 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center text-center space-y-4">
+        <div class="w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center animate-spin" style="animation-duration: 8s;">
+          <span class="material-symbols-rounded text-3xl">qr_code_2</span>
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold tracking-tight">WyScan Secure</h2>
+          <div class="h-6 overflow-hidden mt-1 flex justify-center">
+            <span id="rotating-text" class="text-sm text-neutral-400 font-semibold transition-transform duration-500">Scan instantly</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Action Buttons -->
+      <div class="grid grid-cols-2 gap-4">
+        <button onclick="showScreen('scan')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">qr_code_scanner</span></div>
+          <span class="text-sm font-bold">Scan QR</span>
+        </button>
+        <button onclick="showScreen('generate')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">add_box</span></div>
+          <span class="text-sm font-bold">Generate</span>
+        </button>
+        <button onclick="showScreen('auth')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">token</span></div>
+          <span class="text-sm font-bold">Authenticator</span>
+        </button>
+        <button onclick="showScreen('history')" class="flex flex-col items-center gap-3 p-6 bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm hover:border-primary/35 transition-all ripple">
+          <div class="p-3 bg-primary/10 text-primary rounded-2xl"><span class="material-symbols-rounded text-2xl block">history</span></div>
+          <span class="text-sm font-bold">Logs / History</span>
+        </button>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- QR CAMERA SCANNER SCREEN -->
+    <section id="screen-scan" class="py-6 space-y-6 hidden">
+      <!-- Camera Viewfinder Wrap -->
+      <div class="relative w-full aspect-square max-w-md mx-auto overflow-hidden rounded-[32px] bg-black shadow-lg">
+        <video id="scan-video" playsinline class="w-full h-full object-cover"></video>
+        
+        <!-- Live Viewfinder Box -->
+        <div class="absolute inset-0 border-[40px] border-black/40 flex items-center justify-center">
+          <div class="relative w-56 h-56 border-2 border-primary rounded-3xl">
+            <!-- Precise rounded corners styling matching Material You standard -->
+            <div class="absolute -top-[3px] -left-[3px] w-6 h-6 border-t-4 border-l-4 border-primary rounded-tl-lg"></div>
+            <div class="absolute -top-[3px] -right-[3px] w-6 h-6 border-t-4 border-r-4 border-primary rounded-tr-lg"></div>
+            <div class="absolute -bottom-[3px] -left-[3px] w-6 h-6 border-b-4 border-l-4 border-primary rounded-bl-lg"></div>
+            <div class="absolute -bottom-[3px] -right-[3px] w-6 h-6 border-b-4 border-r-4 border-primary rounded-br-lg"></div>
+            <div class="laser-line absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent"></div>
+          </div>
+        </div>
+
+        <!-- Float camera setting overlays -->
+        <div class="absolute bottom-6 inset-x-0 flex justify-center gap-4 px-6 z-10">
+          <button onclick="toggleScannerFlash()" class="p-3 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-black/80 transition-all">
+            <span id="flash-icon" class="material-symbols-rounded block">flash_off</span>
+          </button>
+          <button onclick="toggleScannerSwitch()" class="p-3 bg-black/60 backdrop-blur-md rounded-full text-white hover:bg-black/80 transition-all">
+            <span class="material-symbols-rounded block">flip_camera_ios</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Local File upload alternatives -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center text-center space-y-4">
+        <span class="material-symbols-rounded text-4xl text-neutral-400">document_scanner</span>
+        <div>
+          <p class="font-bold text-sm">Offline OCR & File Reading</p>
+          <p class="text-xs text-neutral-400 mt-1">Upload screenshots, photos, or documents directly</p>
+        </div>
+        <button onclick="triggerDeviceGallery()" class="py-3 px-6 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-sm inline-flex items-center gap-2 transition-all ripple">
+          <span class="material-symbols-rounded">photo_library</span> Browse Files
+        </button>
+        <input type="file" id="device-file-input" accept="image/*" class="hidden" onchange="runFileScanner(this)">
+      </div>
+    </section>
+
+    <!-- GENERATOR SCREEN -->
+    <section id="screen-generate" class="py-6 space-y-6 hidden">
+      <!-- Input Carousel of categories -->
+      <div class="flex overflow-x-auto gap-2 pb-2 no-scrollbar scroll-smooth" id="generate-selector">
+        <!-- Injected dynamically by JS -->
+      </div>
+
+      <!-- Context input forms -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm space-y-4">
+        <div id="generator-form-fields" class="space-y-4"></div>
+      </div>
+
+      <!-- Styling Parameters & Verification Box -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm space-y-4">
+        <h4 class="font-bold text-sm uppercase tracking-wider text-neutral-400">Personalize QR Style</h4>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold text-neutral-400">Foreground Color</label>
+            <input type="color" id="style-fg" value="#000000" class="w-full h-11 p-1 bg-neutral-50 dark:bg-neutral-950/40 rounded-xl border border-neutral-100 dark:border-neutral-800 cursor-pointer" oninput="runLiveQRGeneration()">
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-bold text-neutral-400">Background Color</label>
+            <input type="color" id="style-bg" value="#ffffff" class="w-full h-11 p-1 bg-neutral-50 dark:bg-neutral-950/40 rounded-xl border border-neutral-100 dark:border-neutral-800 cursor-pointer" oninput="runLiveQRGeneration()">
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center text-xs font-bold text-neutral-400">
+            <span>Code Margin Padding</span>
+            <span id="lbl-style-margin">4</span>
+          </div>
+          <input type="range" id="style-margin" min="0" max="6" value="4" class="w-full accent-primary bg-neutral-100 dark:bg-neutral-800 rounded-full h-2 appearance-none cursor-pointer" oninput="runLiveQRGeneration()">
+        </div>
+      </div>
+
+      <!-- Generated Live Canvas Panel -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl p-6 border border-gray-100 dark:border-neutral-900 shadow-sm flex flex-col items-center space-y-6">
+        <div class="relative p-4 bg-white rounded-2xl border border-gray-200 shadow-inner">
+          <canvas id="generator-output-canvas" class="w-48 h-48 max-w-full"></canvas>
+        </div>
+
+        <!-- On Device Readability Verification Rate -->
+        <div class="w-full bg-neutral-50 dark:bg-neutral-950/60 rounded-2xl p-4 border border-gray-100 dark:border-neutral-800/40 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-neutral-400 font-bold">Scanning Readability Score</p>
+            <p id="qr-quality-lbl" class="font-bold text-sm text-emerald-500 mt-0.5">Calculating...</p>
+          </div>
+          <span class="material-symbols-rounded text-primary text-2xl">verified</span>
+        </div>
+
+        <!-- Export controls -->
+        <div class="flex flex-col gap-2 w-full">
+          <div class="flex gap-2">
+            <button onclick="triggerQRDownload('png')" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all ripple">
+              <span class="material-symbols-rounded text-base">image</span> Export PNG
+            </button>
+            <button onclick="triggerQRDownload('pdf')" class="flex-1 py-3.5 px-4 bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700/80 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all ripple">
+              <span class="material-symbols-rounded text-base">picture_as_pdf</span> Export PDF
+            </button>
+          </div>
+          <button onclick="triggerQRDownload('share')" class="py-4 px-6 bg-primary text-white hover:bg-primary-dark rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-primary/25 ripple">
+            <span class="material-symbols-rounded text-lg">share</span> Direct Native Share
+          </button>
+        </div>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AUTHENTICATOR (TOTP) SCREEN -->
+    <section id="screen-auth" class="py-6 space-y-6 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-bold">Security Keys</h3>
+          <p class="text-xs text-neutral-400">Local Decrypted TOTP Tokens</p>
+        </div>
+        <button onclick="triggerDeviceGallery()" class="p-2.5 bg-primary/10 text-primary hover:bg-primary/20 rounded-xl transition-all ripple">
+          <span class="material-symbols-rounded block text-lg">qr_code_scanner</span>
+        </button>
+      </div>
+
+      <!-- TOTP Card Container -->
+      <div id="totp-card-list" class="space-y-3">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- HISTORY / LOGS SCREEN -->
+    <section id="screen-history" class="py-6 space-y-4 hidden">
+      <div class="flex items-center gap-2 bg-white dark:bg-neutral-900 px-4 py-3 rounded-2xl border border-gray-100 dark:border-neutral-900 shadow-sm">
+        <span class="material-symbols-rounded text-neutral-400">search</span>
+        <input type="text" id="history-search-input" placeholder="Search saved logs..." class="bg-transparent flex-1 text-sm outline-none" oninput="renderHistoryLog()">
+      </div>
+
+      <!-- Dynamic Header Actions -->
+      <div class="flex items-center justify-between">
+        <div class="flex gap-1 overflow-x-auto no-scrollbar" id="history-filters">
+          <button onclick="setHistoryFilter('all')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-primary text-white transition-all shadow-md">All</button>
+          <button onclick="setHistoryFilter('scanned')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-500 transition-all">Scans</button>
+          <button onclick="setHistoryFilter('generated')" class="px-4 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-500 transition-all">Generations</button>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="triggerHistoryZipExport()" class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 text-neutral-400 rounded-xl transition-colors">
+            <span class="material-symbols-rounded text-lg block">archive</span>
+          </button>
+          <button onclick="clearAllHistoryConfirm()" class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-900 text-red-500 rounded-xl transition-colors">
+            <span class="material-symbols-rounded text-lg block">delete_sweep</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="history-data-list" class="space-y-3">
+        <!-- Generated Dynamic Nodes -->
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS SCREEN -->
+    <section id="screen-settings" class="py-6 space-y-6 hidden">
+      <!-- General Layout Group -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 dark:border-neutral-900 bg-neutral-50 dark:bg-neutral-900/20">
+          <h4 class="font-bold text-xs uppercase tracking-wider text-neutral-400">Settings & Rules</h4>
+        </div>
+        <div class="divide-y divide-gray-100 dark:divide-neutral-900">
+          <!-- Audio Toggle -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Audio Sound Confirmation</p>
+              <p class="text-xs text-neutral-400">Play confirmation signal on scans</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-sound" class="sr-only peer" checked onchange="toggleEngineSetting('sound')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+          <!-- Haptic Toggle -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Haptic Feedback</p>
+              <p class="text-xs text-neutral-400">Perform physical system vibration</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-haptic" class="sr-only peer" checked onchange="toggleEngineSetting('haptic')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+          <!-- Auto Save Logs -->
+          <div class="flex items-center justify-between px-6 py-4">
+            <div>
+              <p class="font-semibold text-sm">Automatic History Archival</p>
+              <p class="text-xs text-neutral-400">Record parameters on success states</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" id="set-autosave" class="sr-only peer" checked onchange="toggleEngineSetting('autoSave')">
+              <div class="w-11 h-6 bg-neutral-200 dark:bg-neutral-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-neutral-600 peer-checked:bg-primary"></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dark Mode selections -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 shadow-sm p-4 space-y-3">
+        <h4 class="font-bold text-xs uppercase tracking-wider text-neutral-400 px-2">Theme Mode</h4>
+        <div class="grid grid-cols-3 gap-2">
+          <button id="theme-light" onclick="setUserTheme('light')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">light_mode</span>
+            <span class="text-xs font-semibold">Light</span>
+          </button>
+          <button id="theme-dark" onclick="setUserTheme('dark')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">dark_mode</span>
+            <span class="text-xs font-semibold">Dark</span>
+          </button>
+          <button id="theme-system" onclick="setUserTheme('system')" class="py-3 px-2 border rounded-2xl flex flex-col items-center gap-1 transition-all">
+            <span class="material-symbols-rounded text-lg">settings_suggest</span>
+            <span class="text-xs font-semibold">System</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Erase state button -->
+      <div class="bg-white dark:bg-neutral-900 rounded-3xl border border-gray-100 dark:border-neutral-900 p-6 flex items-center justify-between shadow-sm">
+        <div>
+          <p class="font-bold text-sm">Purge Application Cache</p>
+          <p class="text-xs text-neutral-400 mt-0.5">Flush local database & persistent states</p>
+        </div>
+        <button onclick="purgeLocalCache()" class="py-2.5 px-4 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-950/45 text-red-500 font-bold text-xs rounded-xl transition-all ripple">
+          Purge Data
+        </button>
+      </div>
+
+      <!-- Static Ad-Banner Container -->
+      <div class="ad-banner-container bg-white dark:bg-neutral-900 rounded-3xl p-4 border border-gray-100 dark:border-neutral-900 shadow-sm text-center flex items-center justify-center min-h-[90px]">
+        <div id="container-2a46a48f48ae28576853f055a2e013c8">
+          <p class="text-xs text-neutral-400 font-semibold uppercase tracking-wider">Promoted Space</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Navigation Bar (Capsule Active Indication style) -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white/95 dark:bg-neutral-950/95 border-t border-gray-100 dark:border-neutral-900 px-6 py-2 pb-8 flex justify-around items-center z-40 backdrop-blur-md">
+    <button onclick="showScreen('home')" id="nav-home" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">home</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Home</span>
+    </button>
+    <button onclick="showScreen('scan')" id="nav-scan" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">qr_code_scanner</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Scan</span>
+    </button>
+    <button onclick="showScreen('generate')" id="nav-generate" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">add_box</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Generate</span>
+    </button>
+    <button onclick="showScreen('auth')" id="nav-auth" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">token</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Tokens</span>
+    </button>
+    <button onclick="showScreen('history')" id="nav-history" class="flex flex-col items-center relative py-1 px-3 min-w-[72px] active:scale-95 transition-all">
+      <div class="nav-indicator absolute inset-y-0 w-16 bg-primary/15 rounded-full scale-0 transition-transform duration-200 -z-10"></div>
+      <span class="material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon transition-colors block">history</span>
+      <span class="text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 transition-colors block">Logs</span>
+    </button>
+  </nav>
+
+  <!-- RESULT SLIDE-UP BOTTOM SHEET overlay -->
+  <div id="backdrop" class="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 hidden opacity-0 transition-opacity duration-300" onclick="closeBottomSheet()"></div>
+  <div id="bottom-sheet" class="bottom-sheet fixed bottom-0 inset-x-0 bg-white dark:bg-neutral-900 rounded-t-[32px] p-6 pb-12 z-50 shadow-2xl border-t border-gray-100 dark:border-neutral-900 flex flex-col max-h-[85vh]">
+    <div class="w-12 h-1.5 bg-neutral-200 dark:bg-neutral-800 rounded-full mx-auto mb-6 cursor-pointer" onclick="closeBottomSheet()"></div>
+    
+    <div class="flex items-start gap-4 mb-6">
+      <div id="sheet-icon-bg" class="p-3.5 bg-primary/10 text-primary rounded-2xl flex-shrink-0">
+        <span id="sheet-icon" class="material-symbols-rounded text-2xl block">link</span>
+      </div>
+      <div class="flex-1 min-w-0">
+        <h4 id="sheet-title" class="font-bold text-lg leading-tight">Web Link Found</h4>
+        <p id="sheet-subtitle" class="text-xs text-neutral-400 mt-1 truncate">Checking safety parameter...</p>
+      </div>
+    </div>
+
+    <div id="sheet-payload-card" class="bg-neutral-50 dark:bg-neutral-950 p-4 rounded-2xl border border-gray-100 dark:border-neutral-900 text-sm overflow-y-auto max-h-[25vh] select-text break-all mb-6">
+      <!-- Decoded target strings injected -->
+    </div>
+
+    <!-- Quick action lists inside result -->
+    <div class="space-y-3" id="sheet-actions"></div>
+  </div>
+
+  <!-- NATIVE COMPLIANT ADVERTISING INTERVENTIONAL DIALOG -->
+  <div id="ad-loading-dialog" class="fixed inset-0 bg-black/60 backdrop-blur-md z-50 hidden flex-col items-center justify-center p-6 text-center">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-8 max-w-sm w-full border border-gray-100 dark:border-neutral-800 flex flex-col items-center space-y-6">
+      <div class="w-14 h-14 bg-primary/10 text-primary rounded-2xl flex items-center justify-center animate-pulse">
+        <span class="material-symbols-rounded text-3xl">download_for_offline</span>
+      </div>
+      <div>
+        <h4 class="font-bold text-base text-neutral-900 dark:text-white">Downloading Your File</h4>
+        <p class="text-xs text-neutral-400 mt-1">Please wait a few moments as we compile your vector document...</p>
+      </div>
+      
+      <!-- Loading progress strip -->
+      <div class="w-full bg-neutral-100 dark:bg-neutral-800 h-1.5 rounded-full overflow-hidden">
+        <div id="ad-progress-fill" class="bg-primary h-full transition-all duration-100" style="width: 0%;"></div>
+      </div>
+      
+      <p class="text-[10px] text-neutral-400 font-semibold uppercase tracking-widest animate-pulse">WyScan Secure Offline Process</p>
+    </div>
+  </div>
+
+  <!-- PERMISSION SCREEN MODAL -->
+  <div id="permission-dialog" class="fixed inset-0 bg-black/50 backdrop-blur-md z-50 hidden flex-col items-center justify-center p-6 text-center">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-8 max-w-md w-full border border-gray-100 dark:border-neutral-800 flex flex-col items-center space-y-6">
+      <div class="w-16 h-16 bg-primary/10 text-primary rounded-[22px] flex items-center justify-center">
+        <span class="material-symbols-rounded text-3xl block">photo_camera</span>
+      </div>
+      <div>
+        <h4 class="font-bold text-lg">Grant Camera Permission</h4>
+        <p class="text-sm text-neutral-400 mt-2">WyScan processes optical imagery completely local on your device processor. We do not transmit frames or data profiles online.</p>
+      </div>
+      <div class="flex gap-3 w-full">
+        <button onclick="dismissPermissionDialog()" class="flex-1 py-3 px-4 bg-neutral-100 dark:bg-neutral-800 rounded-2xl font-semibold text-sm transition-all">Cancel</button>
+        <button onclick="requestCameraLifecycle()" class="flex-1 py-3 px-4 bg-primary text-white rounded-2xl font-semibold text-sm transition-all shadow-md shadow-primary/25">Allow Camera</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRIVACY POLICY / TERMS DIALOG -->
+  <div id="info-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex-col items-center justify-center p-6">
+    <div class="bg-white dark:bg-neutral-900 rounded-[32px] p-6 max-w-lg w-full border border-gray-100 dark:border-neutral-800 flex flex-col max-h-[80vh]">
+      <div class="flex justify-between items-center mb-4">
+        <h4 id="info-modal-title" class="font-bold text-lg">Information</h4>
+        <button onclick="closeInfoModal()" class="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors"><span class="material-symbols-rounded block">close</span></button>
+      </div>
+      <div id="info-modal-body" class="flex-1 overflow-y-auto text-sm text-neutral-500 dark:text-neutral-400 space-y-4 no-scrollbar">
+        <!-- Text details inject here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- NATIVE COMPLIANT TOAST MESSAGE -->
+  <div id="toast" class="fixed bottom-28 left-1/2 -translate-x-1/2 bg-neutral-900/95 dark:bg-neutral-100/95 text-white dark:text-neutral-950 px-5 py-3 rounded-full shadow-lg text-xs font-semibold z-50 pointer-events-none opacity-0 scale-90 transition-all duration-300"></div>
+
+  <!-- APPLICATION ENGINE SCRIPT -->
+  <script>
+    // --- SAFE LOCALSTORAGE ACCESS WRAPPER ---
+    const safeStorage = {
+      getItem(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch (e) {
+          console.warn("Storage access blocked by browser privacy sandbox rules", e);
+          return null;
+        }
+      },
+      setItem(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch (e) {
+          console.warn("Storage write operation rejected", e);
+        }
+      },
+      clear() {
+        try {
+          localStorage.clear();
+        } catch (e) {
+          console.warn("Storage clear operation rejected", e);
+        }
+      }
+    };
+
+    // --- COMPONENT REGISTER & STATE CHASSIS ---
+    let activeScreenState = 'home';
+    let currentTabQRType = 'url';
+    let databaseHistory = [];
+    let authenticatorTokens = [];
+    let historyFilterState = 'all';
+
+    let scanCameraLifecycle = false;
+    let cameraVideoStreamObj = null;
+    let activeCameraFacingMode = 'environment';
+    let liveTorchState = false;
+
+    let systemConfig = {
+      theme: 'system',
+      sound: true,
+      haptic: true,
+      autoSave: true
+    };
+
+    // Global offscreen raster tools
+    const rasterCanvas = document.createElement('canvas');
+    const rasterContext = rasterCanvas.getContext('2d');
+
+    // --- HOME SCREEN ROTATOR ---
+    const ROTATOR_TEXTS = ["Scan instantly", "Create customized QR Codes", "100% Offline Operations", "On-Device Authenticator", "Hardware Accelerations"];
+    let rotatorIndex = 0;
+    
+    function startBrandingTextRotation() {
+      setInterval(() => {
+        const textNode = document.getElementById('rotating-text');
+        if (!textNode) return;
+        textNode.style.transform = 'translateY(-20px)';
+        textNode.style.opacity = '0';
+        setTimeout(() => {
+          rotatorIndex = (rotatorIndex + 1) % ROTATOR_TEXTS.length;
+          textNode.textContent = ROTATOR_TEXTS[rotatorIndex];
+          textNode.style.transform = 'translateY(20px)';
+          setTimeout(() => {
+            textNode.style.transform = 'translateY(0)';
+            textNode.style.opacity = '1';
+          }, 50);
+        }, 400);
+      }, 3500);
+    }
+
+    // --- MONETIZATION & AD ADAPTOR MANAGER ---
+    const AdManager = {
+      config: {
+        allAdsEnabled: true,
+        bannerAdsEnabled: true,
+        smartlinkEnabled: true,
+        smartlinkUrl: "https://potterynaggingformerly.com/e78071cy2?key=722ed577a2c49f33f5bd96c777520ff1",
+        adDisplayHoldMs: 3000
+      },
+
+      initBannerIntegration() {
+        if (!this.config.allAdsEnabled || !this.config.bannerAdsEnabled) {
+          document.querySelectorAll('.ad-banner-container').forEach(el => el.classList.add('hidden'));
+          return;
+        }
+        if (!document.getElementById('ads-external-worker')) {
+          const workerScript = document.createElement('script');
+          workerScript.id = 'ads-external-worker';
+          workerScript.async = true;
+          workerScript.dataset.cfasync = "false";
+          workerScript.src = "https://potterynaggingformerly.com/2a46a48f48ae28576853f055a2e013c8/invoke.js";
+          document.head.appendChild(workerScript);
+        }
+      },
+
+      showSmartlinkThenDownload(onSuccessDownloadCallback) {
+        if (!this.config.allAdsEnabled || !this.config.smartlinkEnabled) {
+          onSuccessDownloadCallback();
+          return;
+        }
+
+        const adDialog = document.getElementById('ad-loading-dialog');
+        const fillBar = document.getElementById('ad-progress-fill');
+        
+        adDialog.classList.remove('hidden');
+        adDialog.classList.add('flex');
+        
+        let completionPercent = 0;
+        const progressClock = setInterval(() => {
+          completionPercent += 10;
+          if (fillBar) fillBar.style.width = `${completionPercent}%`;
+          if (completionPercent >= 100) clearInterval(progressClock);
+        }, this.config.adDisplayHoldMs / 10);
+
+        setTimeout(() => {
+          adDialog.classList.add('hidden');
+          adDialog.classList.remove('flex');
+          if (fillBar) fillBar.style.width = '0%';
+
+          try {
+            window.open(this.config.smartlinkUrl, '_blank');
+          } catch (e) {
+            console.warn("Smartlink popup blocked by device context rules.", e);
+          }
+
+          onSuccessDownloadCallback();
+        }, this.config.adDisplayHoldMs);
+      }
+    };
+
+    // --- COMPONENT INITIALIZATIONS ---
+    window.addEventListener('DOMContentLoaded', () => {
+      // Guaranteed Fallback Splash Screen dismisser 
+      // Prevents getting stuck on loading screen if CDNs are slow, blocked, or if code runs into exceptions
+      setTimeout(dismissSplashGracefully, 1600);
+
+      try {
+        loadSystemConfig();
+        loadStoredLogs();
+        loadStoredAuthenticatorTokens();
+        applyUserThemeConfig();
+        setupGeneratorSelectionTabs();
+        setupInputCategoryFields();
+        showScreen('home');
+        startBrandingTextRotation();
+        AdManager.initBannerIntegration();
+
+        // Trigger OTP clocks
+        setInterval(tickOTPTimeRefresh, 1000);
+
+        document.addEventListener('click', captureSystemRippleClicks);
+        const formFields = document.getElementById('generator-form-fields');
+        if (formFields) {
+          formFields.addEventListener('input', debounce(runLiveQRGeneration, 100));
+        }
+      } catch (err) {
+        console.error("Initialization error resolved gracefully:", err);
+      }
+    });
+
+    function dismissSplashGracefully() {
+      const splashNode = document.getElementById('splash');
+      if (splashNode) {
+        splashNode.classList.add('opacity-0');
+        setTimeout(() => {
+          if (splashNode.parentNode) {
+            splashNode.remove();
+          }
+        }, 500);
+      }
+    }
+
+    // --- DETAILED DRAW ACTION / RIPPLE FEEDBACKS ---
+    function captureSystemRippleClicks(e) {
+      const parentNode = e.target.closest('.ripple');
+      if (parentNode) {
+        triggerPhysicalHaptic('light');
+        const diameter = Math.max(parentNode.clientWidth, parentNode.clientHeight);
+        const radius = diameter / 2;
+        const dimensions = parentNode.getBoundingClientRect();
+
+        const circleObj = document.createElement('span');
+        circleObj.style.width = circleObj.style.height = `${diameter}px`;
+        circleObj.style.left = `${e.clientX - dimensions.left - radius}px`;
+        circleObj.style.top = `${e.clientY - dimensions.top - radius}px`;
+        circleObj.classList.add('ripple-effect');
+
+        const activeRipple = parentNode.getElementsByClassName('ripple-effect')[0];
+        if (activeRipple) activeRipple.remove();
+
+        parentNode.appendChild(circleObj);
+      }
+    }
+
+    function triggerPhysicalHaptic(intensity) {
+      if (!systemConfig.haptic || !navigator.vibrate) return;
+      if (intensity === 'light') navigator.vibrate(10);
+      else if (intensity === 'medium') navigator.vibrate(25);
+      else if (intensity === 'success') navigator.vibrate([15, 30, 20]);
+    }
+
+    function playSuccessSoundConfirmation() {
+      if (!systemConfig.sound) return;
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioCtx.createOscillator();
+        const outputNode = audioCtx.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 1000;
+        outputNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        outputNode.gain.exponentialRampToValueAtTime(0.002, audioCtx.currentTime + 0.15);
+        oscillator.connect(outputNode);
+        outputNode.connect(audioCtx.destination);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.15);
+      } catch (err) {
+        console.warn('Web Audio synthesis context block.', err);
+      }
+    }
+
+    // --- NAVIGATION MANAGEMENT CONTROLLER ---
+    function showScreen(screenId) {
+      if (screenId !== 'scan' && scanCameraLifecycle) {
+        killCameraStream();
+      }
+
+      activeScreenState = screenId;
+      const headerTitle = document.getElementById('header-title');
+      if (headerTitle) {
+        headerTitle.textContent = screenId.charAt(0).toUpperCase() + screenId.slice(1);
+      }
+
+      // Toggle Header secondary operations
+      const headerFileTrigger = document.getElementById('header-file-trigger');
+      if (headerFileTrigger) {
+        if (screenId === 'scan') {
+          headerFileTrigger.classList.remove('hidden');
+        } else {
+          headerFileTrigger.classList.add('hidden');
+        }
+      }
+
+      ['home', 'scan', 'generate', 'auth', 'history', 'settings', 'favorites'].forEach(scr => {
+        const el = document.getElementById(`screen-${scr}`);
+        if (el) el.classList.add('hidden');
+        
+        const tabNav = document.getElementById(`nav-${scr}`);
+        if (tabNav) {
+          tabNav.querySelector('.nav-icon').className = 'material-symbols-rounded text-neutral-400 dark:text-neutral-500 nav-icon block transition-colors';
+          tabNav.querySelector('span:not(.nav-indicator)').className = 'text-[10px] font-bold mt-1 text-neutral-400 dark:text-neutral-500 block transition-colors';
+          tabNav.querySelector('.nav-indicator').classList.remove('scale-100');
+          tabNav.querySelector('.nav-indicator').classList.add('scale-0');
+        }
+      });
+
+      // Show selected panel
+      const targetPanel = document.getElementById(`screen-${screenId === 'favorites' ? 'history' : screenId}`);
+      if (targetPanel) targetPanel.classList.remove('hidden');
+
+      const targetNav = document.getElementById(`nav-${screenId === 'favorites' ? 'history' : screenId}`);
+      if (targetNav) {
+        targetNav.querySelector('.nav-icon').className = 'material-symbols-rounded text-primary nav-icon block transition-colors';
+        targetNav.querySelector('span:not(.nav-indicator)').className = 'text-[10px] font-bold mt-1 text-primary block transition-colors';
+        const indicator = targetNav.querySelector('.nav-indicator');
+        indicator.classList.remove('scale-0');
+        indicator.classList.add('scale-100');
+      }
+
+      if (screenId === 'scan') {
+        initiateCameraCaptureFlow();
+      } else if (screenId === 'history' || screenId === 'favorites') {
+        historyFilterState = screenId === 'favorites' ? 'fav' : 'all';
+        renderHistoryLog();
+      } else if (screenId === 'auth') {
+        renderOTPTokenList();
+      }
+    }
+
+    function toggleDrawer(open) {
+      triggerPhysicalHaptic('light');
+      const overlay = document.getElementById('drawer-overlay');
+      const drawer = document.getElementById('drawer');
+      if (open) {
+        overlay.classList.remove('hidden');
+        setTimeout(() => {
+          overlay.classList.add('opacity-100');
+          drawer.classList.add('open');
+        }, 50);
+      } else {
+        overlay.classList.remove('opacity-100');
+        drawer.classList.remove('open');
+        setTimeout(() => overlay.classList.add('hidden'), 300);
+      }
+    }
+
+    function drawerNavigate(target) {
+      toggleDrawer(false);
+      showScreen(target);
+    }
+
+    // --- EXCLUSIVE CAMERA SCANNER MODULE ---
+    function initiateCameraCaptureFlow() {
+      // Prompt camera usage instruction explanation modal first
+      if (!safeStorage.getItem('camera_permitted_once')) {
+        document.getElementById('permission-dialog').classList.remove('hidden');
+        document.getElementById('permission-dialog').classList.add('flex');
+      } else {
+        startLensAcquisition();
+      }
+    }
+
+    function dismissPermissionDialog() {
+      document.getElementById('permission-dialog').classList.add('hidden');
+      document.getElementById('permission-dialog').classList.remove('flex');
+      showScreen('home');
+    }
+
+    function requestCameraLifecycle() {
+      safeStorage.setItem('camera_permitted_once', 'true');
+      document.getElementById('permission-dialog').classList.add('hidden');
+      document.getElementById('permission-dialog').classList.remove('flex');
+      startLensAcquisition();
+    }
+
+    async function startLensAcquisition() {
+      const video = document.getElementById('scan-video');
+      scanCameraLifecycle = true;
+      liveTorchState = false;
+      document.getElementById('flash-icon').textContent = 'flash_off';
+
+      try {
+        const streamConstraints = {
+          video: {
+            facingMode: activeCameraFacingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 1280 }
+          }
+        };
+        cameraVideoStreamObj = await navigator.mediaDevices.getUserMedia(streamConstraints);
+        video.srcObject = cameraVideoStreamObj;
+        video.setAttribute('playsinline', true);
+        video.play();
+        requestAnimationFrame(processCameraFrameTick);
+      } catch (e) {
+        showToast("Hardware Camera connection failed.");
+        showScreen('home');
+      }
+    }
+
+    function killCameraStream() {
+      scanCameraLifecycle = false;
+      if (cameraVideoStreamObj) {
+        cameraVideoStreamObj.getTracks().forEach(track => track.stop());
+        cameraVideoStreamObj = null;
+      }
+    }
+
+    async function toggleScannerFlash() {
+      if (!cameraVideoStreamObj) return;
+      const track = cameraVideoStreamObj.getVideoTracks()[0];
+      try {
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        if (capabilities.torch) {
+          liveTorchState = !liveTorchState;
+          await track.applyConstraints({ advanced: [{ torch: liveTorchState }] });
+          document.getElementById('flash-icon').textContent = liveTorchState ? 'flash_on' : 'flash_off';
+          triggerPhysicalHaptic('light');
+        } else {
+          showToast("Flash is not supported on this lens.");
+        }
+      } catch (err) {
+        showToast("Error managing hardware flash.");
+      }
+    }
+
+    function toggleScannerSwitch() {
+      triggerPhysicalHaptic('medium');
+      activeCameraFacingMode = activeCameraFacingMode === 'environment' ? 'user' : 'environment';
+      killCameraStream();
+      startLensAcquisition();
+    }
+
+    let lastCameraScanTime = 0;
+    function processCameraFrameTick(timestamp) {
+      if (!scanCameraLifecycle) return;
+      const video = document.getElementById('scan-video');
+
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        if (timestamp - lastCameraScanTime > 150) {
+          lastCameraScanTime = timestamp;
+          rasterCanvas.height = video.videoHeight;
+          rasterCanvas.width = video.videoWidth;
+          rasterContext.drawImage(video, 0, 0, rasterCanvas.width, rasterCanvas.height);
+          const imgData = rasterContext.getImageData(0, 0, rasterCanvas.width, rasterCanvas.height);
+          
+          if (typeof jsQR !== 'undefined') {
+            const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
+            if (code && code.data) {
+              playSuccessSoundConfirmation();
+              triggerPhysicalHaptic('success');
+              killCameraStream();
+              
+              if (code.data.startsWith('otpauth://')) {
+                registerOTPTokenFromUri(code.data);
+              } else {
+                if (systemConfig.autoSave) {
+                  appendLogToStorage(code.data, 'scanned');
+                }
+                openResultDetailsSheet(code.data);
+              }
+              return;
+            }
+          }
+        }
+      }
+      requestAnimationFrame(processCameraFrameTick);
+    }
+
+    // --- OCR & LOCAL FILE EXTRACTOR ENGINE ---
+    function triggerDeviceGallery() {
+      triggerPhysicalHaptic('light');
+      document.getElementById('device-file-input').click();
+    }
+
+    function runFileScanner(input) {
+      const file = input.files[0];
+      if (!file) return;
+
+      showToast("Analysing document local context...");
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const imageNode = new Image();
+        imageNode.onload = async function() {
+          rasterCanvas.width = imageNode.width;
+          rasterCanvas.height = imageNode.height;
+          rasterContext.drawImage(imageNode, 0, 0);
+
+          const rawData = rasterContext.getImageData(0, 0, rasterCanvas.width, rasterCanvas.height);
+          
+          if (typeof jsQR !== 'undefined') {
+            const codeResult = jsQR(rawData.data, rawData.width, rawData.height);
+            if (codeResult && codeResult.data) {
+              playSuccessSoundConfirmation();
+              triggerPhysicalHaptic('success');
+              if (codeResult.data.startsWith('otpauth://')) {
+                registerOTPTokenFromUri(codeResult.data);
+              } else {
+                if (systemConfig.autoSave) {
+                  appendLogToStorage(codeResult.data, 'scanned');
+                }
+                openResultDetailsSheet(codeResult.data);
+              }
+              return;
+            }
+          }
+          attemptLocalOCRAnalysis(imageNode);
+        };
+        imageNode.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function attemptLocalOCRAnalysis(imageNode) {
+      if (typeof Tesseract === 'undefined') {
+        showToast("No OCR libraries matched. Text scanning skipped.");
+        return;
+      }
+      showToast("No QR detected. Performing Text OCR extraction...");
+      try {
+        const worker = await Tesseract.createWorker('eng');
+        const recognition = await worker.recognize(imageNode);
+        await worker.terminate();
+
+        if (recognition && recognition.data && recognition.data.text.trim()) {
+          playSuccessSoundConfirmation();
+          triggerPhysicalHaptic('success');
+          const extractedText = recognition.data.text.trim();
+          if (systemConfig.autoSave) {
+            appendLogToStorage(extractedText, 'scanned');
+          }
+          openResultDetailsSheet(extractedText);
+        } else {
+          showToast("Failed to decode any codes or optical text.");
+        }
+      } catch (err) {
+        showToast("Text extraction system failed.");
+        console.error(err);
+      }
+    }
+
+    // --- INTEGRATED QR GENERATOR ENGINE ---
+    const GENERATOR_CATEGORIES = [
+      { id: 'url', label: 'Web URL', icon: 'link', fields: [{ id: 'input-url', label: 'Website URL', type: 'url', placeholder: 'https://domain.com' }] },
+      { id: 'text', label: 'Text Message', icon: 'notes', fields: [{ id: 'input-text', label: 'Plain Content', type: 'textarea', placeholder: 'Pasted layout parameters...' }] },
+      { id: 'wifi', label: 'WiFi Network', icon: 'wifi', fields: [
+        { id: 'input-wifi-ssid', label: 'SSID Network Name', type: 'text', placeholder: 'Home Network' },
+        { id: 'input-wifi-pass', label: 'Password Key', type: 'password', placeholder: '••••••••' },
+        { id: 'input-wifi-auth', label: 'Network Security Protocol', type: 'select', options: ['WPA', 'WEP', 'nopass'] }
+      ]},
+      { id: 'email', label: 'Email Address', icon: 'mail', fields: [
+        { id: 'input-email-to', label: 'To Address', type: 'email', placeholder: 'address@mailbox.com' },
+        { id: 'input-email-sub', label: 'Subject Line', type: 'text', placeholder: 'Request Details' },
+        { id: 'input-email-body', label: 'Body Copy', type: 'textarea', placeholder: 'Write details here...' }
+      ]}
+    ];
+
+    function setupGeneratorSelectionTabs() {
+      const parent = document.getElementById('generate-selector');
+      if (!parent) return;
+      parent.innerHTML = '';
+      GENERATOR_CATEGORIES.forEach((cat, index) => {
+        const tab = document.createElement('button');
+        tab.onclick = () => selectGeneratorCategory(cat.id);
+        tab.id = `tab-cat-${cat.id}`;
+        tab.className = `flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold transition-all duration-200 ripple ${
+          index === 0 ? 'bg-primary text-white shadow-md' : 'bg-white dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800'
+        }`;
+        tab.innerHTML = `<span class="material-symbols-rounded text-base block">${cat.icon}</span> ${cat.label}`;
+        parent.appendChild(tab);
+      });
+    }
+
+    function setupInputCategoryFields() {
+      const parent = document.getElementById('generator-form-fields');
+      if (!parent) return;
+      const catConfig = GENERATOR_CATEGORIES.find(c => c.id === currentTabQRType);
+      parent.innerHTML = '';
+
+      catConfig.fields.forEach(field => {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex flex-col gap-1.5';
+        
+        const label = document.createElement('label');
+        label.className = 'text-xs font-bold text-neutral-400 dark:text-neutral-500';
+        label.textContent = field.label;
+
+        let input;
+        if (field.type === 'textarea') {
+          input = document.createElement('textarea');
+          input.className = 'w-full px-4 py-3 text-sm bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-100 dark:border-neutral-800 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary/25 transition-all h-20 resize-none';
+        } else if (field.type === 'select') {
+          input = document.createElement('select');
+          input.className = 'w-full px-4 py-3 text-sm bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-100 dark:border-neutral-800 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary/25 transition-all appearance-none';
+          field.options.forEach(opt => {
+            const el = document.createElement('option');
+            el.value = opt;
+            el.textContent = opt === 'nopass' ? 'Open Security (No Password)' : opt;
+            input.appendChild(el);
+          });
+        } else {
+          input = document.createElement('input');
+          input.type = field.type;
+          input.className = 'w-full px-4 py-3 text-sm bg-neutral-50 dark:bg-neutral-950/40 border border-neutral-100 dark:border-neutral-800 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary/25 transition-all';
+        }
+
+        input.id = field.id;
+        input.placeholder = field.placeholder || '';
+        
+        wrap.appendChild(label);
+        wrap.appendChild(input);
+        parent.appendChild(wrap);
+      });
+
+      if (currentTabQRType === 'url') {
+        const urlInput = document.getElementById('input-url');
+        if (urlInput) urlInput.value = 'https://';
+      }
+      runLiveQRGeneration();
+    }
+
+    function selectGeneratorCategory(catId) {
+      GENERATOR_CATEGORIES.forEach(c => {
+        const tab = document.getElementById(`tab-cat-${c.id}`);
+        if (!tab) return;
+        if (c.id === catId) {
+          tab.className = 'flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold bg-primary text-white shadow-md transition-all duration-200 ripple';
+        } else {
+          tab.className = 'flex-shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-xs font-semibold bg-white dark:bg-neutral-900 border border-gray-100 dark:border-neutral-800 transition-all duration-200 ripple';
+        }
+      });
+      currentTabQRType = catId;
+      setupInputCategoryFields();
+    }
+
+    function compileFormParameters() {
+      try {
+        switch (currentTabQRType) {
+          case 'url':
+            return document.getElementById('input-url').value.trim();
+          case 'text':
+            return document.getElementById('input-text').value.trim();
+          case 'wifi':
+            const ssid = document.getElementById('input-wifi-ssid').value.trim();
+            const pass = document.getElementById('input-wifi-pass').value.trim();
+            const auth = document.getElementById('input-wifi-auth').value;
+            if (!ssid) return '';
+            return `WIFI:S:${ssid};T:${auth};P:${pass};;`;
+          case 'email':
+            const to = document.getElementById('input-email-to').value.trim();
+            const sub = document.getElementById('input-email-sub').value.trim();
+            const body = document.getElementById('input-email-body').value.trim();
+            if (!to) return '';
+            return `mailto:${to}?subject=${encodeURIComponent(sub)}&body=${encodeURIComponent(body)}`;
+          default:
+            return '';
+        }
+      } catch (e) {
+        return '';
+      }
+    }
+
+    let activeGeneratedRawString = '';
+    function runLiveQRGeneration() {
+      const payload = compileFormParameters();
+      activeGeneratedRawString = payload;
+      if (!payload) return;
+
+      const canvas = document.getElementById('generator-output-canvas');
+      const marginVal = parseInt(document.getElementById('style-margin').value || 4);
+      const fgColor = document.getElementById('style-fg').value || '#000000';
+      const bgColor = document.getElementById('style-bg').value || '#ffffff';
+
+      const labelStyleMargin = document.getElementById('lbl-style-margin');
+      if (labelStyleMargin) labelStyleMargin.textContent = marginVal;
+
+      if (typeof QRCode === 'undefined') {
+        console.warn("QRCode helper module has not initialized yet.");
+        return;
+      }
+
+      QRCode.toCanvas(canvas, payload, {
+        width: 300,
+        margin: marginVal,
+        color: {
+          dark: fgColor,
+          light: bgColor
+        },
+        errorCorrectionLevel: 'Q'
+      }, (err) => {
+        if (err) console.error("Generation canvas failed.", err);
+        else {
+          evaluateGeneratedQualityScore(fgColor, bgColor, marginVal);
+        }
+      });
+    }
+
+    function evaluateGeneratedQualityScore(fg, bg, margin) {
+      const labelNode = document.getElementById('qr-quality-lbl');
+      if (!labelNode) return;
+      
+      const parseRgb = (hex) => {
+        let clean = hex.replace('#', '');
+        if (clean.length === 3) clean = clean.split('').map(c => c+c).join('');
+        return {
+          r: parseInt(clean.substring(0, 2), 16),
+          g: parseInt(clean.substring(2, 4), 16),
+          b: parseInt(clean.substring(4, 6), 16)
+        };
+      };
+
+      try {
+        const rgbFg = parseRgb(fg);
+        const rgbBg = parseRgb(bg);
+        const distance = Math.abs(rgbFg.r - rgbBg.r) + Math.abs(rgbFg.g - rgbBg.g) + Math.abs(rgbFg.b - rgbBg.b);
+
+        let rating = 'Excellent';
+        let style = 'text-emerald-500';
+
+        if (distance < 200 || margin < 2) {
+          rating = 'Fair (Hard to Read)';
+          style = 'text-red-500';
+        } else if (distance < 450 || margin < 4) {
+          rating = 'Good';
+          style = 'text-amber-500';
+        }
+
+        labelNode.textContent = rating;
+        labelNode.className = `font-bold text-sm mt-0.5 ${style}`;
+      } catch (err) {
+        labelNode.textContent = 'Calculating...';
+      }
+    }
+
+    function triggerQRDownload(format) {
+      if (!activeGeneratedRawString) {
+        showToast("Input structural parameters first.");
+        return;
+      }
+      triggerPhysicalHaptic('medium');
+
+      const action = () => {
+        const canvas = document.getElementById('generator-output-canvas');
+        if (format === 'png') {
+          const anchor = document.createElement('a');
+          anchor.download = `wyscan-${Date.now()}.png`;
+          anchor.href = canvas.toDataURL('image/png');
+          anchor.click();
+          showToast("PNG saved locally.");
+        } else if (format === 'pdf') {
+          if (typeof window.jspdf === 'undefined') {
+            showToast("PDF component is not available offline.");
+            return;
+          }
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF();
+          pdf.setFont("helvetica", "bold");
+          pdf.text("WyScan Generated Vector", 20, 20);
+          pdf.setFontSize(10);
+          pdf.setFont("helvetica", "normal");
+          pdf.text(`Output Value: ${activeGeneratedRawString.slice(0, 50)}...`, 20, 28);
+          pdf.text(`Captured Date: ${new Date().toLocaleString()}`, 20, 34);
+          pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 45, 50, 120, 120);
+          pdf.save(`wyscan-doc-${Date.now()}.pdf`);
+          showToast("PDF saved locally.");
+        } else if (format === 'share') {
+          canvas.toBlob(async (blob) => {
+            const docFile = new File([blob], `wyscan-${Date.now()}.png`, { type: 'image/png' });
+            if (navigator.canShare && navigator.canShare({ files: [docFile] })) {
+              try {
+                await navigator.share({
+                  files: [docFile],
+                  title: 'WyScan QR',
+                  text: 'Direct on-device creation via WyScan.'
+                });
+              } catch (e) {
+                copyTextToDeviceClipboard(activeGeneratedRawString);
+              }
+            } else {
+              copyTextToDeviceClipboard(activeGeneratedRawString);
+            }
+          });
+        }
+
+        if (systemConfig.autoSave) {
+          appendLogToStorage(activeGeneratedRawString, 'generated');
+        }
+      };
+
+      AdManager.showSmartlinkThenDownload(action);
+    }
+
+    // --- SECURE TOTP / AUTHENTICATOR ENGINES ---
+    function decodeBase32ToBytes(str) {
+      const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      str = str.replace(/=+$/, "").toUpperCase();
+      let bits = 0;
+      let val = 0;
+      const bytes = [];
+      for (let i = 0; i < str.length; i++) {
+        const charIdx = base32Alphabet.indexOf(str[i]);
+        if (charIdx === -1) throw new Error("Format is invalid.");
+        val = (val << 5) | charIdx;
+        bits += 5;
+        if (bits >= 8) {
+          bytes.push((val >> (bits - 8)) & 255);
+          bits -= 8;
+        }
+      }
+      return new Uint8Array(bytes);
+    }
+
+    async function evaluateTOTP6DigitCode(secretBase32, intervalSecs = 30) {
+      try {
+        const keyBytes = decodeBase32ToBytes(secretBase32);
+        const epoch = Math.round(Date.now() / 1000);
+        const counter = Math.floor(epoch / intervalSecs);
+
+        const counterBytes = new Uint8Array(8);
+        let val = counter;
+        for (let i = 7; i >= 0; i--) {
+          counterBytes[i] = val & 0xff;
+          val = val >> 8;
+        }
+
+        const rawCryptoKey = await window.crypto.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "HMAC", hash: { name: "SHA-1" } },
+          false,
+          ["sign"]
+        );
+
+        const signatureBuffer = await window.crypto.subtle.sign("HMAC", rawCryptoKey, counterBytes);
+        const hmac = new Uint8Array(signatureBuffer);
+
+        const offset = hmac[hmac.length - 1] & 0x0f;
+        const codeNum = (
+          ((hmac[offset] & 0x7f) << 24) |
+          ((hmac[offset + 1] & 0xff) << 16) |
+          ((hmac[offset + 2] & 0xff) << 8) |
+          (hmac[offset + 3] & 0xff)
+        ) % 1000000;
+
+        return codeNum.toString().padStart(6, '0');
+      } catch (err) {
+        return "••••••";
+      }
+    }
+
+    function registerOTPTokenFromUri(uri) {
+      try {
+        const rawUrl = new URL(uri);
+        const secret = rawUrl.searchParams.get("secret");
+        const issuer = rawUrl.searchParams.get("issuer") || "Private Issuer";
+        let account = rawUrl.pathname.replace(/^\/\//, '').replace(/^otpauth:\/\/totp\//, '');
+        account = decodeURIComponent(account);
+
+        if (!secret) {
+          showToast("Invalid key format.");
+          return;
+        }
+
+        const duplicateCheck = authenticatorTokens.some(t => t.secret === secret);
+        if (!duplicateCheck) {
+          authenticatorTokens.unshift({
+            id: Date.now().toString(),
+            issuer,
+            account,
+            secret,
+            interval: parseInt(rawUrl.searchParams.get("period")) || 30
+          });
+          safeStorage.setItem('wyscan_tokens', JSON.stringify(authenticatorTokens));
+          showToast("Security code registered!");
+        }
+        showScreen('auth');
+      } catch (e) {
+        showToast("Verification failed.");
+      }
+    }
+
+    async function renderOTPTokenList() {
+      const container = document.getElementById('totp-card-list');
+      if (!container) return;
+      container.innerHTML = '';
+
+      if (authenticatorTokens.length === 0) {
+        container.innerHTML = `
+          <div class="py-12 text-center text-neutral-400">
+            <span class="material-symbols-rounded text-4xl mb-2">vpn_key</span>
+            <p class="text-sm">No verification codes added.</p>
+          </div>
+        `;
+        return;
+      }
+
+      for (const token of authenticatorTokens) {
+        const currentCode = await evaluateTOTP6DigitCode(token.secret, token.interval);
+        
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-neutral-900 rounded-2xl p-5 border border-gray-100 dark:border-neutral-900 shadow-sm flex justify-between items-center';
+        card.innerHTML = `
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-neutral-400 uppercase tracking-wide">${token.issuer}</p>
+            <p class="text-sm font-semibold truncate text-neutral-500 mt-0.5">${token.account}</p>
+            <p class="text-2xl font-bold tracking-widest text-primary mt-1 select-all cursor-pointer" onclick="copyTextToDeviceClipboard('${currentCode}')">${currentCode}</p>
+          </div>
+          <button onclick="purgeOTPToken('${token.id}', event)" class="p-2 hover:bg-neutral-100 dark:hover:bg-neutral-950 text-neutral-400 hover:text-red-500 rounded-xl transition-colors">
+            <span class="material-symbols-rounded block">delete</span>
+          </button>
+        `;
+        container.appendChild(card);
+      }
+    }
+
+    function tickOTPTimeRefresh() {
+      if (activeScreenState === 'auth') {
+        renderOTPTokenList();
+      }
+    }
+
+    function purgeOTPToken(id, e) {
+      e.stopPropagation();
+      triggerPhysicalHaptic('medium');
+      if (confirm("Erase this security key from WyScan storage?")) {
+        authenticatorTokens = authenticatorTokens.filter(t => t.id !== id);
+        safeStorage.setItem('wyscan_tokens', JSON.stringify(authenticatorTokens));
+        renderOTPTokenList();
+        showToast("Key deleted.");
+      }
+    }
+
+    // --- LOGS & STORAGE ARCHIVE ---
+    function appendLogToStorage(raw, direction) {
+      const dataObj = {
+        id: Date.now().toString(),
+        raw,
+        direction,
+        timestamp: new Date().toISOString(),
+        favorite: false
+      };
+
+      const dup = databaseHistory.some(d => d.raw === raw && d.direction === direction);
+      if (!dup) {
+        databaseHistory.unshift(dataObj);
+        safeStorage.setItem('wyscan_history', JSON.stringify(databaseHistory));
+      }
+    }
+
+    function loadStoredLogs() {
+      try {
+        const data = safeStorage.getItem('wyscan_history');
+        databaseHistory = data ? JSON.parse(data) : [];
+      } catch (e) {
+        databaseHistory = [];
+      }
+    }
+
+    function loadStoredAuthenticatorTokens() {
+      try {
+        const tokens = safeStorage.getItem('wyscan_tokens');
+        authenticatorTokens = tokens ? JSON.parse(tokens) : [];
+      } catch (e) {
+        authenticatorTokens = [];
+      }
+    }
+
+    function renderHistoryLog() {
+      const parent = document.getElementById('history-data-list');
+      if (!parent) return;
+      const searchInput = document.getElementById('history-search-input');
+      const searchKey = searchInput ? searchInput.value.toLowerCase() : '';
+      parent.innerHTML = '';
+
+      let items = databaseHistory;
+      if (historyFilterState === 'scanned') {
+        items = items.filter(i => i.direction === 'scanned');
+      } else if (historyFilterState === 'generated') {
+        items = items.filter(i => i.direction === 'generated');
+      } else if (historyFilterState === 'fav') {
+        items = items.filter(i => i.favorite);
+      }
+
+      if (searchKey) {
+        items = items.filter(i => i.raw.toLowerCase().includes(searchKey));
+      }
+
+      if (items.length === 0) {
+        parent.innerHTML = `
+          <div class="py-12 text-center text-neutral-400">
+            <span class="material-symbols-rounded text-4xl mb-2">history</span>
+            <p class="text-sm">Empty storage archive</p>
+          </div>
+        `;
+        return;
+      }
+
+      items.forEach(item => {
+        const parsed = evaluateStringProfile(item.raw);
+        const card = document.createElement('div');
+        card.className = 'bg-white dark:bg-neutral-900 rounded-2xl p-4 border border-gray-100 dark:border-neutral-900 flex items-center justify-between gap-4 shadow-sm';
+        card.innerHTML = `
+          <div class="min-w-0 flex-1 cursor-pointer flex items-center gap-3" onclick="openResultDetailsSheet('${item.raw.replace(/'/g, "\\'")}')">
+            <div class="p-2.5 rounded-xl bg-neutral-100 dark:bg-neutral-950 text-neutral-500">
+              <span class="material-symbols-rounded block text-xl">${parsed.icon}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="font-bold text-sm truncate leading-tight">${parsed.summary}</p>
+              <p class="text-[10px] text-neutral-400 font-semibold uppercase mt-1 tracking-wider">${item.direction} • ${new Date(item.timestamp).toLocaleDateString()}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button onclick="toggleLogFavoriteState('${item.id}', event)" class="p-2 text-neutral-400 hover:text-amber-500 rounded-xl transition-colors">
+              <span class="material-symbols-rounded block text-xl ${item.favorite ? 'text-amber-500' : ''}">${item.favorite ? 'star' : 'grade'}</span>
+            </button>
+            <button onclick="purgeSingleLog('${item.id}', event)" class="p-2 text-neutral-400 hover:text-red-500 rounded-xl transition-colors">
+              <span class="material-symbols-rounded block text-xl">delete</span>
+            </button>
+          </div>
+        `;
+        parent.appendChild(card);
+      });
+    }
+
+    function toggleLogFavoriteState(id, e) {
+      e.stopPropagation();
+      triggerPhysicalHaptic('light');
+      const idx = databaseHistory.findIndex(i => i.id === id);
+      if (idx !== -1) {
+        databaseHistory[idx].favorite = !databaseHistory[idx].favorite;
+        safeStorage.setItem('wyscan_history', JSON.stringify(databaseHistory));
+        renderHistoryLog();
+      }
+    }
+
+    function purgeSingleLog(id, e) {
+      e.stopPropagation();
+      triggerPhysicalHaptic('medium');
+      databaseHistory = databaseHistory.filter(i => i.id !== id);
+      safeStorage.setItem('wyscan_history', JSON.stringify(databaseHistory));
+      renderHistoryLog();
+    }
+
+    function setHistoryFilter(mode) {
+      triggerPhysicalHaptic('light');
+      historyFilterState = mode;
+      
+      const filters = document.querySelectorAll('#history-filters button');
+      filters.forEach(btn => btn.className = 'px-4 py-1.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-900 text-neutral-500 transition-all');
+      
+      const targetIdx = { all: 0, scanned: 1, generated: 2, fav: -1 }[mode];
+      if (targetIdx !== -1 && filters[targetIdx]) {
+        filters[targetIdx].className = 'px-4 py-1.5 rounded-full text-xs font-semibold bg-primary text-white transition-all shadow-md';
+      }
+      renderHistoryLog();
+    }
+
+    function clearAllHistoryConfirm() {
+      triggerPhysicalHaptic('medium');
+      if (confirm("Flush all records in WyScan log archives?")) {
+        databaseHistory = [];
+        safeStorage.setItem('wyscan_history', JSON.stringify([]));
+        renderHistoryLog();
+        showToast("Storage logs cleared.");
+      }
+    }
+
+    async function triggerHistoryZipExport() {
+      if (databaseHistory.length === 0) {
+        showToast("Archive contains no data to compress.");
+        return;
+      }
+      if (typeof JSZip === 'undefined') {
+        showToast("ZIP component is not loaded.");
+        return;
+      }
+      triggerPhysicalHaptic('medium');
+      showToast("Compressing ZIP archive on device...");
+      
+      const zip = new JSZip();
+      const meta = JSON.stringify(databaseHistory, null, 2);
+      zip.file("wyscan_backup_meta.json", meta);
+      
+      const content = await zip.generateAsync({ type: "blob" });
+      const anchor = document.createElement('a');
+      anchor.download = `wyscan-history-${Date.now()}.zip`;
+      anchor.href = URL.createObjectURL(content);
+      anchor.click();
+      showToast("ZIP export completed.");
+    }
+
+    // --- PARSER ENGINE ---
+    function evaluateStringProfile(str) {
+      if (!str) return { type: 'text', icon: 'notes', summary: 'Empty payload', content: '' };
+      if (str.startsWith('http://') || str.startsWith('https://')) {
+        return { type: 'url', icon: 'link', summary: 'Website Address', content: str };
+      }
+      if (str.startsWith('WIFI:')) {
+        const ssid = str.match(/S:([^;]+)/)?.[1] || 'Network SSID';
+        return { type: 'wifi', icon: 'wifi', summary: `WiFi: ${ssid}`, content: str };
+      }
+      if (str.startsWith('mailto:')) {
+        const address = str.replace('mailto:', '').split('?')[0];
+        return { type: 'email', icon: 'mail', summary: address, content: str };
+      }
+      return { type: 'text', icon: 'notes', summary: 'Plain Text Block', content: str };
+    }
+
+    // --- BOTTOM SHEET AND ACTION DIALOG CONTROLS ---
+    function openResultDetailsSheet(payload) {
+      const parsed = evaluateStringProfile(payload);
+      
+      document.getElementById('sheet-title').textContent = parsed.summary;
+      document.getElementById('sheet-subtitle').textContent = payload.slice(0, 40) + (payload.length > 40 ? '...' : '');
+      document.getElementById('sheet-payload-card').textContent = payload;
+      
+      const actionsWrapper = document.getElementById('sheet-actions');
+      actionsWrapper.innerHTML = '';
+
+      const actions = [];
+      if (parsed.type === 'url') {
+        actions.push({ label: 'Open Safely', icon: 'open_in_new', action: () => window.open(payload, '_blank') });
+      }
+      
+      actions.push({ label: 'Copy Clipboard', icon: 'content_copy', action: () => copyTextToDeviceClipboard(payload) });
+      actions.push({ label: 'Share Text', icon: 'share', action: () => {
+        if (navigator.share) navigator.share({ text: payload }).catch(() => {});
+        else copyTextToDeviceClipboard(payload);
+      }});
+
+      actions.forEach((act, index) => {
+        const btn = document.createElement('button');
+        btn.onclick = () => {
+          triggerPhysicalHaptic('medium');
+          act.action();
+        };
+        btn.className = `w-full py-3.5 px-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all ripple ${
+          index === 0 ? 'bg-primary text-white shadow-md' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200'
+        }`;
+        btn.innerHTML = `<span class="material-symbols-rounded text-lg block">${act.icon}</span> ${act.label}`;
+        actionsWrapper.appendChild(btn);
+      });
+
+      document.getElementById('backdrop').classList.remove('hidden');
+      setTimeout(() => {
+        document.getElementById('backdrop').classList.add('opacity-100');
+        document.getElementById('bottom-sheet').classList.add('open');
+      }, 50);
+    }
+
+    function closeBottomSheet() {
+      document.getElementById('backdrop').classList.remove('opacity-100');
+      document.getElementById('bottom-sheet').classList.remove('open');
+      setTimeout(() => {
+        document.getElementById('backdrop').classList.add('hidden');
+        if (activeScreenState === 'scan') initiateCameraCaptureFlow();
+      }, 300);
+    }
+
+    // --- SETTINGS CONTROLLER ---
+    function loadSystemConfig() {
+      try {
+        const config = safeStorage.getItem('wyscan_settings');
+        if (config) systemConfig = { ...systemConfig, ...JSON.parse(config) };
+      } catch (e) {
+        console.error(e);
+      }
+
+      document.getElementById('set-sound').checked = systemConfig.sound;
+      document.getElementById('set-haptic').checked = systemConfig.haptic;
+      document.getElementById('set-autosave').checked = systemConfig.autoSave;
+    }
+
+    function toggleEngineSetting(key) {
+      triggerPhysicalHaptic('light');
+      if (key === 'sound') systemConfig.sound = document.getElementById('set-sound').checked;
+      if (key === 'haptic') systemConfig.haptic = document.getElementById('set-haptic').checked;
+      if (key === 'autoSave') systemConfig.autoSave = document.getElementById('set-autosave').checked;
+      safeStorage.setItem('wyscan_settings', JSON.stringify(systemConfig));
+    }
+
+    function setUserTheme(theme) {
+      triggerPhysicalHaptic('medium');
+      systemConfig.theme = theme;
+      safeStorage.setItem('wyscan_settings', JSON.stringify(systemConfig));
+      applyUserThemeConfig();
+    }
+
+    function applyUserThemeConfig() {
+      const darkQuery = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const isDark = systemConfig.theme === 'dark' || (systemConfig.theme === 'system' && darkQuery);
+
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+
+      ['light', 'dark', 'system'].forEach(t => {
+        const btn = document.getElementById(`theme-${t}`);
+        if (!btn) return;
+        if (systemConfig.theme === t) {
+          btn.className = 'py-3 px-2 border border-primary/40 bg-primary/5 text-primary rounded-2xl flex flex-col items-center gap-1 transition-all';
+        } else {
+          btn.className = 'py-3 px-2 border border-neutral-100 dark:border-neutral-800/40 bg-neutral-50/40 dark:bg-neutral-950/20 text-neutral-400 rounded-2xl flex flex-col items-center gap-1 transition-all';
+        }
+      });
+    }
+
+    function purgeLocalCache() {
+      triggerPhysicalHaptic('medium');
+      if (confirm("Reset everything? WyScan will flush local configuration, keys, and log caches.")) {
+        safeStorage.clear();
+        location.reload();
+      }
+    }
+
+    // --- INFORMATION DIALOG SYSTEM ---
+    const LEGAL_COPY = {
+      about: `
+        <p class="font-bold">WyScan Professional (v1.2.0)</p>
+        <p>A client-side utility built natively for on-device security validation. Features built-in base32 dynamic TOTP code synthesis and offline optical character recognition scanner models.</p>
+        <p>All process activities remain in isolated sandboxed sand buffers locally on your silicon device.</p>
+      `,
+      privacy: `
+        <p class="font-bold">Privacy Policy</p>
+        <p>WyScan does not use cloud server systems or track behavioral metrics. Device camera optical streams exist as variables inside short-lived active window memory frames. No transmission is executed.</p>
+      `
+    };
+
+    function openInfoModal(key) {
+      document.getElementById('info-modal-title').textContent = key === 'about' ? 'About WyScan' : 'Privacy Profile';
+      document.getElementById('info-modal-body').innerHTML = LEGAL_COPY[key] || '';
+      document.getElementById('info-modal').classList.remove('hidden');
+      document.getElementById('info-modal').classList.add('flex');
+    }
+
+    function closeInfoModal() {
+      document.getElementById('info-modal').classList.add('hidden');
+      document.getElementById('info-modal').classList.remove('flex');
+    }
+
+    // --- DEBOUNCE UTILITY ---
+    function debounce(func, delay = 100) {
+      let timer;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => func.apply(this, args), delay);
+      };
+    }
+
+    // --- TOAST SYSTEM ---
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.classList.remove('opacity-0', 'scale-90');
+      toast.classList.add('opacity-100', 'scale-100');
+
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('opacity-100', 'scale-100');
+        toast.classList.add('opacity-0', 'scale-90');
+      }, 2500);
+    }
+
+    function copyTextToDeviceClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Copied to device clipboard");
+      });
+    }
+
+    // --- SERVICE WORKER PIPELINE ---
+    if ('serviceWorker' in navigator) {
+      const swBody = `
+        const CACHE_NAME = 'wyscan-v1.3';
+        const CACHE_RESOURCES = [
+          './',
+          'https://cdn.tailwindcss.com',
+          'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap',
+          'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js',
+          'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js',
+          'https://cdn.jsdelivr.net/npm/tesseract.js@5.0.3/dist/tesseract.min.js',
+          'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js',
+          'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+        ];
+
+        self.addEventListener('install', (e) => {
+          e.waitUntil(
+            caches.open(CACHE_NAME).then((cache) => cache.addAll(CACHE_RESOURCES))
+          );
+        });
+
+        self.addEventListener('fetch', (e) => {
+          e.respondWith(
+            caches.match(e.request).then((res) => res || fetch(e.request))
+          );
+        });
+      `;
+      try {
+        const blobObj = new Blob([swBody], { type: 'application/javascript' });
+        navigator.serviceWorker.register(URL.createObjectURL(blobObj)).catch(() => {});
+      } catch (e) {
+        console.warn("Service worker registration skipped due to context boundaries.");
+      }
+    }
+  </script>
+</body>
+</html>
