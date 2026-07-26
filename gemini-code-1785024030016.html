@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>WyScan - Offline Native QR Tools</title>
+  <meta name="theme-color" content="#000000">
+
+  <!-- Embedded Manifest Data URI -->
+  <link rel="manifest" href='data:application/manifest+json,{"name":"WyScan","short_name":"WyScan","start_url":"./index.html","display":"standalone","background_color":"#000000","theme_color":"#000000","icons":[{"src":"https://cdn-icons-png.flaticon.com/512/3522/3522206.png","sizes":"512x512","type":"image/png"}]}'>
+
+  <!-- Offline Standalone CDN Engine Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/otpauth@9.2.2/dist/otpauth.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #000000;
+      --bg-surface: #121212;
+      --bg-surface-variant: #1E1E1E;
+      --text-primary: #FFFFFF;
+      --text-secondary: #A0A0A0;
+      --accent: #14B86A;
+      --accent-light: rgba(20, 184, 106, 0.15);
+      --border-color: #2A2A2A;
+      --radius-lg: 24px;
+      --radius-md: 16px;
+      --radius-sm: 8px;
+      --font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body.theme-light {
+      --bg-primary: #FFFFFF;
+      --bg-surface: #F5F5F5;
+      --bg-surface-variant: #EEEEEE;
+      --text-primary: #000000;
+      --text-secondary: #666666;
+      --border-color: #E0E0E0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-family);
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      overflow-x: hidden;
+      padding-bottom: 70px;
+    }
+
+    /* Top Navigation Header */
+    header {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: var(--bg-primary);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    /* Navigation Drawer */
+    .drawer {
+      position: fixed;
+      top: 0;
+      left: -280px;
+      width: 280px;
+      height: 100%;
+      background: var(--bg-surface);
+      z-index: 200;
+      transition: transform 0.3s cubic-bezier(0, 0, 0.2, 1);
+      padding: 24px 16px;
+    }
+
+    .drawer.open {
+      transform: translateX(280px);
+    }
+
+    .drawer-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 199;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .drawer-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Views Framework */
+    .view {
+      display: none;
+      padding: 16px;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Material You Components */
+    .btn {
+      background: var(--accent);
+      color: #000000;
+      font-weight: 600;
+      border: none;
+      padding: 14px 24px;
+      border-radius: var(--radius-lg);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      width: 100%;
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+
+    /* Touch Ripple Effect */
+    .ripple {
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ripple-effect {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(0);
+      animation: ripple-animation 0.6s linear;
+      pointer-events: none;
+    }
+
+    @keyframes ripple-animation {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* Toast Overlay */
+    .md-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--bg-surface-variant);
+      color: var(--text-primary);
+      padding: 12px 24px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: transform 0.3s cubic-bezier(0, 0, 0.2, 1);
+      z-index: 1000;
+      border: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    .md-toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Ad Container Isolation */
+    #ad-banner-container {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      margin: 16px 0;
+    }
+
+    .ad-banner-wrapper {
+      background: var(--bg-surface-variant);
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      text-align: center;
+      width: 100%;
+      max-width: 320px;
+      min-height: 50px;
+    }
+
+    .ad-badge {
+      font-size: 9px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    /* Scanner Interface */
+    .scanner-container {
+      position: relative;
+      width: 100%;
+      height: 55vh;
+      background: #000;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    #scanner-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Modal System */
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+
+    .modal.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: var(--bg-surface);
+      padding: 24px;
+      border-radius: var(--radius-lg);
+      width: 85%;
+      max-width: 400px;
+    }
+
+    .auth-card {
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .auth-code {
+      font-family: monospace;
+      font-size: 22px;
+      font-weight: bold;
+      color: var(--accent);
+      letter-spacing: 2px;
+    }
+
+    .quality-badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .quality-badge.excellent { background: rgba(20, 184, 106, 0.2); color: #14B86A; }
+    .quality-badge.good { background: rgba(255, 193, 7, 0.2); color: #FFC107; }
+    .quality-badge.fair { background: rgba(244, 67, 54, 0.2); color: #F44336; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <button id="btn-open-drawer" class="btn-icon ripple" style="background:none; border:none; color:inherit; font-size: 20px; cursor: pointer;">☰</button>
+    <div style="font-weight: 700; font-size: 18px; color: var(--accent);">WyScan</div>
+    <button id="btn-clipboard-detect" class="btn-icon ripple" style="background:none; border:none; color:inherit; font-size: 18px; cursor: pointer;">📋</button>
+  </header>
+
+  <!-- Navigation Drawer -->
+  <div id="drawer-overlay" class="drawer-overlay"></div>
+  <nav id="app-drawer" class="drawer">
+    <h2 style="color:var(--accent); margin-bottom: 20px;">WyScan</h2>
+    <div class="drawer-menu">
+      <div class="card ripple" onclick="UI.switchView('home-view')" style="cursor: pointer;">Home</div>
+      <div class="card ripple" onclick="UI.switchView('scanner-view'); Scanner.startCamera();" style="cursor: pointer;">Scan QR</div>
+      <div class="card ripple" onclick="UI.switchView('generator-view')" style="cursor: pointer;">Generate QR</div>
+      <div class="card ripple" onclick="UI.switchView('auth-view')" style="cursor: pointer;">Authentication</div>
+      <div class="card ripple" onclick="UI.switchView('history-view')" style="cursor: pointer;">History</div>
+      <div class="card ripple" onclick="UI.switchView('settings-view')" style="cursor: pointer;">Settings</div>
+    </div>
+  </nav>
+
+  <!-- HOME VIEW -->
+  <section id="home-view" class="view active">
+    <div style="text-align: center; padding: 32px 0;">
+      <h1 style="font-size: 32px; margin-bottom: 8px;">WyScan</h1>
+      <p style="color: var(--text-secondary);">Fast. Offline. Privacy First.</p>
+    </div>
+
+    <div style="display: grid; gap: 12px; margin-bottom: 24px;">
+      <button class="btn ripple" onclick="UI.switchView('scanner-view'); Scanner.startCamera();">
+        📷 Scan QR Code
+      </button>
+      <button class="btn ripple" style="background: var(--bg-surface-variant); color: var(--text-primary);" onclick="UI.switchView('generator-view');">
+        ✨ Generate QR Code
+      </button>
+    </div>
+
+    <!-- Ad Container Banner Slot -->
+    <div id="ad-banner-container"></div>
+  </section>
+
+  <!-- SCANNER VIEW -->
+  <section id="scanner-view" class="view">
+    <div class="scanner-container">
+      <video id="scanner-video" playsinline></video>
+      <canvas id="scanner-canvas" style="display:none;"></canvas>
+    </div>
+
+    <div style="display: flex; gap: 8px; margin-top: 16px;">
+      <button class="btn ripple" onclick="Scanner.toggleTorch()">Flash / Torch</button>
+      <button class="btn ripple" onclick="Scanner.runOCR()">Extract Text (OCR)</button>
+    </div>
+
+    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="Scanner.processFile(this.files[0])">
+    <button class="btn ripple" style="margin-top: 8px; background: var(--bg-surface-variant); color: var(--text-primary);" onclick="document.getElementById('file-input').click()">
+      Select Image File
+    </button>
+  </section>
+
+  <!-- GENERATOR VIEW -->
+  <section id="generator-view" class="view">
+    <div class="card">
+      <h3>QR Code Content</h3>
+      <input type="text" id="gen-input-text" placeholder="Enter URL or Text..." style="width: 100%; padding: 12px; margin: 12px 0; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: inherit;" oninput="Generator.generate({text: this.value})">
+      
+      <div style="text-align: center; margin: 16px 0;">
+        <canvas id="generator-canvas"></canvas>
+        <div id="qr-quality-badge" style="margin-top: 8px;"></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+        <button class="btn ripple" onclick="Generator.exportPNG()">PNG</button>
+        <button class="btn ripple" onclick="Generator.exportSVG()">SVG</button>
+        <button class="btn ripple" onclick="Generator.exportPDF()">PDF</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- AUTHENTICATOR VIEW -->
+  <section id="auth-view" class="view">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h2>Authenticator</h2>
+      <span id="auth-countdown" style="font-weight: bold; color: var(--accent);">30s</span>
+    </div>
+    <div id="auth-list"></div>
+  </section>
+
+  <!-- HISTORY VIEW -->
+  <section id="history-view" class="view">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h2>History</h2>
+      <button class="btn ripple" style="width:auto; padding: 6px 12px; font-size: 12px; background: var(--bg-surface-variant); color: var(--text-primary);" onclick="Storage.clearHistory(); UI.renderHistory();">Clear</button>
+    </div>
+    <div id="history-list" style="margin-top: 16px;"></div>
+  </section>
+
+  <!-- SETTINGS VIEW -->
+  <section id="settings-view" class="view">
+    <h2>Settings</h2>
+    <div class="card" style="margin-top: 16px;">
+      <p><strong>WyScan PWA</strong> - Version 1.0.0</p>
+      <p style="color: var(--text-secondary); font-size: 12px; margin-top: 8px;">Client-side storage & offline processing.</p>
+    </div>
+  </section>
+
+  <!-- Ad Loading Indicator Modal -->
+  <div id="ad-loading-modal" class="modal">
+    <div class="modal-content" style="text-align: center;">
+      <div style="font-size: 24px; margin-bottom: 8px;">⌛</div>
+      <p id="ad-modal-text">Preparing your download...</p>
+    </div>
+  </div>
+
+  <!-- Scan Result Dialog -->
+  <div id="scan-result-modal" class="modal">
+    <div class="modal-content">
+      <span id="result-type-badge" style="background: var(--accent); color:#000; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold;"></span>
+      <p id="result-content" style="margin: 16px 0; word-break: break-all;"></p>
+      <button class="btn ripple" onclick="document.getElementById('scan-result-modal').classList.remove('show')">Close</button>
+    </div>
+  </div>
+
+  <!-- MONOLITHIC APPLICATION LOGIC -->
+  <script>
+    /**
+     * 1. Ad Manager Engine
+     */
+    const AdManager = {
+      config: {
+        enabled: true, // Central On/Off Toggle Switch
+        smartlinkUrl: "https://potterynaggingformerly.com/e78071cy2?key=722ed577a2c49f33f5bd96c777520ff1",
+        downloadAdDelayMs: 3500,
+        allowedPagesForBanners: ["home-view", "history-view", "generator-view", "settings-view"]
+      },
+
+      init() {
+        if (!this.config.enabled) return;
+        this.renderBanners();
+      },
+
+      renderBanners() {
+        if (!this.config.enabled) return;
+        
+        const activeView = document.querySelector('.view.active');
+        if (!activeView || !this.config.allowedPagesForBanners.includes(activeView.id)) {
+          this.clearBanners();
+          return;
+        }
+
+        const container = document.getElementById('ad-banner-container');
+        if (!container) return;
+
+        if (!container.dataset.loaded) {
+          container.innerHTML = `
+            <div class="ad-banner-wrapper">
+              <div class="ad-badge">Sponsored Content</div>
+              <div id="banner-slot" class="banner-slot">
+                 <span style="font-size: 11px; opacity: 0.5;">Advertisement Banner</span>
+              </div>
+            </div>
+          `;
+          container.dataset.loaded = "true";
+          this.injectBannerScript();
+        }
+      },
+
+      clearBanners() {
+        const container = document.getElementById('ad-banner-container');
+        if (container) {
+          container.innerHTML = '';
+          delete container.dataset.loaded;
+        }
+      },
+
+      injectBannerScript() {
+        // Place custom script logic here if inserting dynamically
+      },
+
+      async showSmartlinkThenDownload(downloadCallback) {
+        if (!this.config.enabled) {
+          await downloadCallback();
+          return;
+        }
+
+        UI.showAdModal("Preparing your high-resolution export...");
+
+        try {
+          window.open(this.config.smartlinkUrl, '_blank', 'noopener,noreferrer');
+        } catch (e) {
+          console.warn("Pop-up blocked:", e);
+        }
+
+        let remaining = Math.ceil(this.config.downloadAdDelayMs / 1000);
+        const interval = setInterval(() => {
+          remaining--;
+          if (remaining > 0) {
+            UI.updateAdModalText(`Preparing download in ${remaining}s...`);
+          } else {
+            clearInterval(interval);
+          }
+        }, 1000);
+
+        setTimeout(async () => {
+          UI.hideAdModal();
+          try {
+            await downloadCallback();
+          } catch (err) {
+            UI.showToast("Download failed. Please try again.");
+          }
+        }, this.config.downloadAdDelayMs);
+      }
+    };
+
+    /**
+     * 2. Local Storage Manager
+     */
+    const Storage = {
+      KEYS: {
+        HISTORY: 'wyscan_history',
+        AUTH: 'wyscan_auth_tokens',
+        SETTINGS: 'wyscan_settings'
+      },
+
+      getSettings() {
+        const defaultSettings = {
+          theme: 'system',
+          haptic: true,
+          sound: true,
+          autoOpen: false,
+          saveHistory: true,
+          continuousScan: false
+        };
+        const stored = localStorage.getItem(this.KEYS.SETTINGS);
+        return stored ? { ...defaultSettings, ...JSON.parse(stored) } : defaultSettings;
+      },
+
+      getHistory() {
+        const raw = localStorage.getItem(this.KEYS.HISTORY);
+        return raw ? JSON.parse(raw) : [];
+      },
+
+      addHistoryItem(item) {
+        const history = this.getHistory();
+        const newItem = {
+          id: Date.now().toString(36) + Math.random().toString(36).substr(2),
+          timestamp: new Date().toLocaleTimeString(),
+          ...item
+        };
+        history.unshift(newItem);
+        localStorage.setItem(this.KEYS.HISTORY, JSON.stringify(history.slice(0, 200)));
+        return newItem;
+      },
+
+      clearHistory() {
+        localStorage.removeItem(this.KEYS.HISTORY);
+      },
+
+      getAuthTokens() {
+        const raw = localStorage.getItem(this.KEYS.AUTH);
+        return raw ? JSON.parse(raw) : [];
+      },
+
+      saveAuthToken(token) {
+        const tokens = this.getAuthTokens();
+        tokens.push({ id: Date.now().toString(), ...token });
+        localStorage.setItem(this.KEYS.AUTH, JSON.stringify(tokens));
+      }
+    };
+
+    /**
+     * 3. UI and Navigation Controller
+     */
+    const UI = {
+      init() {
+        this.setupRippleEffect();
+        this.setupDrawer();
+        this.applyTheme(Storage.getSettings().theme);
+      },
+
+      showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = 'md-toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => {
+          toast.classList.remove('show');
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      },
+
+      vibrate(ms = 40) {
+        if ('vibrate' in navigator) navigator.vibrate(ms);
+      },
+
+      applyTheme(theme) {
+        document.body.classList.remove('theme-dark', 'theme-light');
+        if (theme === 'system') {
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.body.classList.add(isDark ? 'theme-dark' : 'theme-light');
+        } else {
+          document.body.classList.add(`theme-${theme}`);
+        }
+      },
+
+      switchView(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        const target = document.getElementById(viewId);
+        if (target) {
+          target.classList.add('active');
+          window.scrollTo(0, 0);
+        }
+        
+        if (viewId === 'history-view') this.renderHistory();
+
+        AdManager.renderBanners();
+        this.closeDrawer();
+      },
+
+      setupDrawer() {
+        const drawer = document.getElementById('app-drawer');
+        const overlay = document.getElementById('drawer-overlay');
+        document.getElementById('btn-open-drawer')?.addEventListener('click', () => {
+          drawer.classList.add('open');
+          overlay.classList.add('open');
+        });
+        overlay?.addEventListener('click', () => this.closeDrawer());
+      },
+
+      closeDrawer() {
+        document.getElementById('app-drawer')?.classList.remove('open');
+        document.getElementById('drawer-overlay')?.classList.remove('open');
+      },
+
+      setupRippleEffect() {
+        document.addEventListener('pointerdown', (e) => {
+          const target = e.target.closest('.ripple');
+          if (!target) return;
+          const rect = target.getBoundingClientRect();
+          const circle = document.createElement('span');
+          const diameter = Math.max(rect.width, rect.height);
+          const radius = diameter / 2;
+
+          circle.style.width = circle.style.height = `${diameter}px`;
+          circle.style.left = `${e.clientX - rect.left - radius}px`;
+          circle.style.top = `${e.clientY - rect.top - radius}px`;
+          circle.classList.add('ripple-effect');
+
+          const ripple = target.getElementsByClassName('ripple-effect')[0];
+          if (ripple) ripple.remove();
+
+          target.appendChild(circle);
+        });
+      },
+
+      renderHistory() {
+        const container = document.getElementById('history-list');
+        const items = Storage.getHistory();
+        if (!items.length) {
+          container.innerHTML = '<p style="color:var(--text-secondary); text-align:center;">No history recorded yet.</p>';
+          return;
+        }
+
+        container.innerHTML = items.map(item => `
+          <div class="card">
+            <div style="font-size:10px; color:var(--text-secondary);">${item.timestamp}</div>
+            <div style="font-weight:bold; margin: 4px 0;">${item.type.toUpperCase()}</div>
+            <div style="font-size:12px; word-break:break-all;">${item.content}</div>
+          </div>
+        `).join('');
+      },
+
+      showAdModal(text) {
+        document.getElementById('ad-modal-text').textContent = text;
+        document.getElementById('ad-loading-modal').classList.add('show');
+      },
+
+      updateAdModalText(text) {
+        document.getElementById('ad-modal-text').textContent = text;
+      },
+
+      hideAdModal() {
+        document.getElementById('ad-loading-modal')?.classList.remove('show');
+      }
+    };
+
+    /**
+     * 4. Camera & OCR Scanner Module
+     */
+    const Scanner = {
+      stream: null,
+      videoEl: null,
+      canvasEl: null,
+      ctx: null,
+      scanning: false,
+      torchState: false,
+
+      async init() {
+        this.videoEl = document.getElementById('scanner-video');
+        this.canvasEl = document.getElementById('scanner-canvas');
+        this.ctx = this.canvasEl.getContext('2d', { willReadFrequently: true });
+      },
+
+      async startCamera() {
+        if (this.scanning) return;
+        try {
+          const constraints = { video: { facingMode: 'environment', width: { ideal: 1280 } } };
+          this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+          this.videoEl.srcObject = this.stream;
+          await this.videoEl.play();
+          this.scanning = true;
+          requestAnimationFrame(() => this.scanFrame());
+          UI.vibrate(20);
+        } catch (err) {
+          UI.showToast("Camera access denied or unavailable.");
+        }
+      },
+
+      stopCamera() {
+        if (this.stream) {
+          this.stream.getTracks().forEach(track => track.stop());
+          this.stream = null;
+        }
+        this.scanning = false;
+      },
+
+      scanFrame() {
+        if (!this.scanning) return;
+
+        if (this.videoEl.readyState === this.videoEl.HAVE_ENOUGH_DATA) {
+          this.canvasEl.height = this.videoEl.videoHeight;
+          this.canvasEl.width = this.videoEl.videoWidth;
+          this.ctx.drawImage(this.videoEl, 0, 0, this.canvasEl.width, this.canvasEl.height);
+
+          const imageData = this.ctx.getImageData(0, 0, this.canvasEl.width, this.canvasEl.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+          if (code && code.data) {
+            this.onCodeDetected(code.data);
+            if (!Storage.getSettings().continuousScan) {
+              this.stopCamera();
+              return;
+            }
+          }
+        }
+        requestAnimationFrame(() => this.scanFrame());
+      },
+
+      async toggleTorch() {
+        if (!this.stream) return;
+        const track = this.stream.getVideoTracks()[0];
+        try {
+          this.torchState = !this.torchState;
+          await track.applyConstraints({ advanced: [{ torch: this.torchState }] });
+        } catch (e) {
+          UI.showToast("Torch unsupported on device.");
+        }
+      },
+
+      onCodeDetected(data) {
+        UI.vibrate(80);
+        
+        if (/^otpauth:\/\//i.test(data)) {
+          Auth.addFromURI(data);
+          UI.switchView('auth-view');
+          UI.showToast("OTP Secret configured!");
+          return;
+        }
+
+        Storage.addHistoryItem({ type: 'scan', content: data });
+        this.showScanResultModal(data);
+      },
+
+      showScanResultModal(text) {
+        const modal = document.getElementById('scan-result-modal');
+        document.getElementById('result-type-badge').textContent = "DETECTED";
+        document.getElementById('result-content').textContent = text;
+        modal.classList.add('show');
+      },
+
+      async runOCR() {
+        UI.showToast("Processing image frame...");
+        if (typeof Tesseract === 'undefined') {
+          UI.showToast("OCR engine offline or unavailable.");
+          return;
+        }
+        
+        const dataUrl = this.canvasEl.toDataURL('image/png');
+        const result = await Tesseract.recognize(dataUrl, 'eng');
+        const text = result.data.text.trim();
+
+        if (text) {
+          Storage.addHistoryItem({ type: 'ocr', content: text });
+          this.showScanResultModal(text);
+        } else {
+          UI.showToast("No readable text detected.");
+        }
+      },
+
+      processFile(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            this.canvasEl.width = img.width;
+            this.canvasEl.height = img.height;
+            this.ctx.drawImage(img, 0, 0);
+            const imageData = this.ctx.getImageData(0, 0, img.width, img.height);
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            if (code) {
+              this.onCodeDetected(code.data);
+            } else {
+              UI.showToast("No valid QR detected in image file.");
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+
+    /**
+     * 5. QR Code Generator Module
+     */
+    const Generator = {
+      qrCanvas: null,
+
+      init() {
+        this.qrCanvas = document.getElementById('generator-canvas');
+      },
+
+      async generate(config) {
+        const text = config.text || "WyScan";
+        try {
+          await QRCode.toCanvas(this.qrCanvas, text, {
+            width: 250,
+            margin: 2,
+            color: { dark: '#000000', light: '#FFFFFF' }
+          });
+          this.checkQuality(text);
+        } catch (err) {
+          console.error(err);
+        }
+      },
+
+      checkQuality(text) {
+        const badge = document.getElementById('qr-quality-badge');
+        let score = 'excellent';
+        if (text.length > 200) score = 'fair';
+        else if (text.length > 80) score = 'good';
+
+        badge.innerHTML = `<span class="quality-badge ${score}">Quality: ${score.toUpperCase()}</span>`;
+      },
+
+      exportPNG() {
+        AdManager.showSmartlinkThenDownload(() => {
+          const link = document.createElement('a');
+          link.download = `wyscan-qr-${Date.now()}.png`;
+          link.href = this.qrCanvas.toDataURL('image/png');
+          link.click();
+          UI.showToast("PNG saved to downloads.");
+        });
+      },
+
+      exportSVG() {
+        AdManager.showSmartlinkThenDownload(() => {
+          const text = document.getElementById('gen-input-text').value || "WyScan";
+          QRCode.toString(text, { type: 'svg' }, (err, string) => {
+            const blob = new Blob([string], { type: 'image/svg+xml' });
+            const link = document.createElement('a');
+            link.download = `wyscan-qr-${Date.now()}.svg`;
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            UI.showToast("SVG saved to downloads.");
+          });
+        });
+      },
+
+      exportPDF() {
+        AdManager.showSmartlinkThenDownload(() => {
+          const imageUri = this.qrCanvas.toDataURL('image/png');
+          const win = window.open('');
+          win.document.write(`<img src="${imageUri}" onload="window.print();window.close()"/>`);
+        });
+      }
+    };
+
+    /**
+     * 6. Authenticator TOTP Module
+     */
+    const Auth = {
+      timer: null,
+
+      init() {
+        this.startLoop();
+      },
+
+      addFromURI(uri) {
+        try {
+          const parsed = OTPAuth.URI.parse(uri);
+          Storage.saveAuthToken({
+            issuer: parsed.issuer || 'Account',
+            label: parsed.label || 'User',
+            secret: parsed.secret.base32
+          });
+          this.render();
+        } catch (e) {
+          UI.showToast("Invalid Authenticator URI");
+        }
+      },
+
+      startLoop() {
+        this.timer = setInterval(() => this.render(), 1000);
+      },
+
+      render() {
+        const list = document.getElementById('auth-list');
+        if (!list) return;
+
+        const tokens = Storage.getAuthTokens();
+        const epoch = Math.floor(Date.now() / 1000);
+        const count = 30 - (epoch % 30);
+
+        document.getElementById('auth-countdown').textContent = `${count}s`;
+
+        list.innerHTML = tokens.map(t => {
+          let code = '------';
+          try {
+            const totp = new OTPAuth.TOTP({
+              issuer: t.issuer,
+              label: t.label,
+              algorithm: 'SHA1',
+              digits: 6,
+              period: 30,
+              secret: OTPAuth.Secret.fromBase32(t.secret)
+            });
+            code = totp.generate();
+          } catch (e) {}
+
+          return `
+            <div class="auth-card">
+              <div>
+                <div style="font-weight:bold;">${t.issuer}</div>
+                <div style="font-size:12px; color:var(--text-secondary);">${t.label}</div>
+              </div>
+              <div class="auth-code">${code.slice(0,3)} ${code.slice(3)}</div>
+            </div>
+          `;
+        }).join('');
+      }
+    };
+
+    /**
+     * 7. Controller Bootstrap
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+      UI.init();
+      Scanner.init();
+      Generator.init();
+      Auth.init();
+      AdManager.init();
+
+      // Register inline Service Worker dynamically via Data URI
+      if ('serviceWorker' in navigator) {
+        const swContent = `
+          self.addEventListener('install', e => self.skipWaiting());
+          self.addEventListener('activate', e => self.clients.claim());
+          self.addEventListener('fetch', e => {
+            if (!e.request.url.includes('potterynaggingformerly.com')) {
+              e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+            }
+          });
+        `;
+        const blob = new Blob([swContent], { type: 'application/javascript' });
+        navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+      }
+
+      // Clipboard Detector Option
+      document.getElementById('btn-clipboard-detect')?.addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            document.getElementById('gen-input-text').value = text;
+            UI.switchView('generator-view');
+            Generator.generate({ text });
+            UI.showToast("Loaded clipboard text!");
+          }
+        } catch (e) {
+          UI.showToast("Clipboard permission required.");
+        }
+      });
+    });
+  </script>
+</body>
+</html>
